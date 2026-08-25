@@ -1,0 +1,9 @@
+{
+  "name": "tins-native",
+  "version-string": "0.1.0",
+  "description": "Native library builds (FFTW, OpenBLAS) backing TINS.Native.<rid> NuGet packages.",
+  "dependencies": [
+    "fftw3",
+    "openblas"
+  ]
+}

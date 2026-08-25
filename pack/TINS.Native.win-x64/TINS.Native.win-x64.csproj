@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
+    <PackageId>TINS.Native.win-x64</PackageId>
+    <Description>Native runtime assets (FFTW, OpenBLAS, Eigen wrapper, DPSS) for TINS.Core on win-x64.</Description>
+    <PackageTags>Neuroscience, Native, FFTW, OpenBLAS, win-x64</PackageTags>
+    <NativeStagingDir Condition="'$(NativeStagingDir)'==''">$(MSBuildThisFileDirectory)..\..\artifacts\runtimes\win-x64\native</NativeStagingDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(NativeStagingDir)\*" Pack="true"
+          PackagePath="runtimes/win-x64/native/%(Filename)%(Extension)" Visible="false" />
+    <!-- Vendored: no CI build exists for these yet (see vendor/win-x64/NOTES.md). -->
+    <None Include="$(MSBuildThisFileDirectory)..\..\vendor\win-x64\*.dll" Pack="true"
+          PackagePath="runtimes/win-x64/native/%(Filename)%(Extension)" Visible="false" />
+  </ItemGroup>
+
+</Project>

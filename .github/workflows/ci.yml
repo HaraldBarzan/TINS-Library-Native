@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            triplet: x64-windows
+          - rid: linux-x64
+            os: ubuntu-latest
+            triplet: x64-linux-dynamic
+          - rid: osx-x64
+            os: macos-13
+            triplet: x64-osx-dynamic
+          - rid: osx-arm64
+            os: macos-14
+            triplet: arm64-osx-dynamic
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.rid }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Bootstrap vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: "vcpkg.json"
+
+      - name: vcpkg install (${{ matrix.triplet }})
+        shell: pwsh
+        run: |
+          ${{ env.VCPKG_ROOT }}/vcpkg install --triplet ${{ matrix.triplet }} --x-install-root=${{ github.workspace }}/vcpkg_installed
+
+      - name: Stage native assets
+        shell: pwsh
+        run: |
+          ./scripts/stage-native.ps1 -Triplet ${{ matrix.triplet }} -Rid ${{ matrix.rid }} `
+            -VcpkgInstalledRoot ${{ github.workspace }}/vcpkg_installed
+
+      - name: Pack TINS.Native.${{ matrix.rid }}
+        shell: pwsh
+        run: |
+          dotnet pack pack/TINS.Native.${{ matrix.rid }}/TINS.Native.${{ matrix.rid }}.csproj `
+            -c Release -o artifacts/nupkg
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          dotnet nuget add source "${{ github.workspace }}/artifacts/nupkg" --name local-native
+          dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }} --prerelease --source local-native
+          dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release -p:SmokeRid=${{ matrix.rid }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TINS.Native.${{ matrix.rid }}
+          path: artifacts/nupkg/*.nupkg
+          if-no-files-found: error

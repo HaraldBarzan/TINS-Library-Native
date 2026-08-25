@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <!-- Deliberately no <RuntimeIdentifiers> here: each CI matrix leg already runs natively on its
+         target OS/arch, so a plain framework-dependent build/run resolves the right native package
+         via the host's own RID. Declaring RIDs here would pull in self-contained runtime packs
+         from nuget.org for every platform, which this smoke test does not need. -->
+    <!-- Set by CI to the RID under test; consumed by Program.cs to decide which libraries to probe. -->
+    <SmokeRid Condition="'$(SmokeRid)'==''">win-x64</SmokeRid>
+    <DefineConstants>$(DefineConstants);SMOKE_RID_$(SmokeRid.Replace('-','_'))</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The package under test is added by CI via "dotnet add package TINS.Native.<rid>",
+         right before this project is restored/run; see .github/workflows/ci.yml. -->
+  </ItemGroup>
+
+</Project>
