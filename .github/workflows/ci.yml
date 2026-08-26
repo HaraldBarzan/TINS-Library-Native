@@ -26,6 +26,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.rid }}
 
+    env:
+      # fftw3's (and, now that LAPACK is enabled, openblas's lapack-netlib) bundled
+      # CMakeLists.txt predate CMake 3.5 and were never updated -- CMake 4.x (what
+      # GitHub-hosted runners ship, unlike vcpkg's own cached-and-pinned older CMake used
+      # locally) hard-removed compatibility with that. This is vcpkg's own documented
+      # workaround for exactly this class of "old vendored CMakeLists.txt" failure.
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
     steps:
       - uses: actions/checkout@v4
 
