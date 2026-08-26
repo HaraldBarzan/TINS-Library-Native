@@ -57,6 +57,10 @@ vcpkg_cmake_configure(
         # without a real gfortran), so this combination does not need a Fortran toolchain.
         -DBUILD_WITHOUT_LAPACK=OFF
         -DNOFORTRAN=ON
+        # Enabling LAPACK above pulls in lapack-netlib's own bundled CMakeLists.txt, which
+        # (like fftw3's) predates CMake 3.5 and was never updated -- same CMake-4.x removal,
+        # same documented escape hatch, see the fftw3 overlay's portfile.cmake for detail.
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     MAYBE_UNUSED_VARIABLES
         GETARCH_BINARY_DIR
 )

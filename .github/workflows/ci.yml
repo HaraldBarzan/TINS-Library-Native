@@ -40,19 +40,6 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # fftw3's (and, now that LAPACK is enabled, openblas's lapack-netlib) bundled
-      # CMakeLists.txt predate CMake 3.5 and were never updated -- CMake 4.x (what
-      # GitHub-hosted runners ship by default) hard-removed compatibility with that.
-      # Setting CMAKE_POLICY_VERSION_MINIMUM as a plain env var does NOT fix this: vcpkg
-      # does not forward arbitrary env vars into the per-port cmake.exe invocations it
-      # spawns (confirmed -- the exact same failure recurred with that var set). Pinning
-      # an older CMake here instead, matching the version vcpkg's own local bootstrap used
-      # successfully, so vcpkg picks this one up when it resolves which CMake to use.
-      - name: Install a pre-CMake-4 toolchain (fftw3/lapack-netlib compatibility)
-        uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: "3.30.1"
-
       # lukka/run-vcpkg defaults VCPKG_BINARY_SOURCES to the GitHub Actions cache backend
       # (x-gha), which needs these two env vars exported -- they exist in the workflow run's
       # context but aren't exposed to shell steps automatically. Without this, "vcpkg install"
