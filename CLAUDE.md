@@ -7,11 +7,18 @@ repository.
 
 `tins-lib-native` builds and packages the native (C/C++) dependencies behind
 [TINS-Library](https://github.com/HaraldBarzan/TINS-Library) (`TINS.Core`, at `c:\_code\tins-lib`
-locally) — FFTW, OpenBLAS, a custom Eigen wrapper (`libeigenexports`), and a DPSS/Slepian-sequence
-library (`libdpss`). It exists as a separate repo because these libraries change far less often than
-TINS.Core itself, and the goal is one NuGet package per RID (`TINS.Native.win-x64`,
+locally) — FFTW and OpenBLAS. It exists as a separate repo because these libraries change far less
+often than TINS.Core itself, and the goal is one NuGet package per RID (`TINS.Native.win-x64`,
 `TINS.Native.linux-x64`, `TINS.Native.osx-x64`, `TINS.Native.osx-arm64`) that TINS.Core consumers add
 explicitly for whichever platform(s) they ship.
+
+`TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
+(`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis) — this repo originally vendored
+pre-built win-x64-only copies of both (see git history around commit `390d0a3` if you need it). Both
+were since replaced with pure managed code directly in `tins-lib` (`SingularValueDecomposition`
+rewritten onto the `OpenBLAS.SGESVD` this repo already builds; DPSS reimplemented via a managed
+tridiagonal eigensolver), so **this repo now only needs to build FFTW + OpenBLAS** — full parity
+across all RIDs, no vendored/Windows-only content, no gap to track.
 
 **Read `README.md` for the user-facing scope table and package layout.** This file is about how to
 work on the repo itself.
@@ -23,36 +30,37 @@ propose an alternative to one of these, stop and re-read this list instead:
 
 1. **One NuGet package per RID**, not one per native library. `TINS.Native.<rid>` contains only
    `runtimes/<rid>/native/*` content, no managed assembly.
-2. **This round's build scope is FFTW + OpenBLAS only**, built from source per-platform via vcpkg
-   (manifest mode, `vcpkg.json`). `libeigenexports`/`libdpss` have **no tracked source anywhere** — not
-   in this repo, not in `tins-lib`, not recovered from anywhere else. They are vendored as pre-built
-   **win-x64-only** binaries in `vendor/win-x64/` (copied from `tins-lib` at commit
-   `06f0f126544e5ac8cf3d1974988a29f957e3d844` — see `vendor/win-x64/NOTES.md`). Do not attempt to build
-   them from source until that source is actually recovered or rewritten; that's an explicit follow-up,
-   not something to solve opportunistically.
+2. **Build scope is FFTW + OpenBLAS only**, built from source per-platform via vcpkg (manifest mode,
+   `vcpkg.json`) — identical across all four RIDs. `libeigenexports`/`libdpss` are gone from the
+   picture entirely (see Project Overview above); do not reintroduce a `vendor/` directory or a
+   win-x64-only special case without a new, explicit reason.
 3. **Publishing is local-only for now.** CI builds, smoke-tests, and uploads nupkgs as workflow
    artifacts; nothing is pushed to nuget.org or any other feed. Don't add a publish step without
    being asked.
-4. **`tins-lib` itself is untouched by this repo's work so far.** It still bundles its own win-x64
-   natives via `src/TINS.Core/TINS.Core.csproj`'s `runtimes/**/native/*` glob, unchanged. That
-   migration (dropping the glob, deleting `src/TINS.Core/runtimes/`, updating `README.md`, adding
-   `TINS.Native.win-x64` references to `tests/TINS.Tests.Unit` and `tests/TINS.Sketching`, and porting
-   the resolver fix below back into `TINS.Core`'s actual `NativeImportResolver.cs`) is a deliberate,
-   separate, later pass — only do it if explicitly asked, and only after this repo's packages are
-   proven working across all RIDs in CI.
+4. **`tins-lib` itself is untouched by this repo's work so far**, aside from the SVD/DPSS-elimination
+   changes noted above (those landed directly in `tins-lib`, unrelated to this repo's own packaging).
+   `TINS.Core` still bundles its own win-x64 FFTW/OpenBLAS natives via
+   `src/TINS.Core/TINS.Core.csproj`'s `runtimes/**/native/*` glob, unchanged. That migration (dropping
+   the glob, deleting `src/TINS.Core/runtimes/`, updating `README.md`, adding `TINS.Native.win-x64`
+   references to `tests/TINS.Tests.Unit` and `tests/TINS.Sketching`, and porting the resolver fix below
+   back into `TINS.Core`'s actual `NativeImportResolver.cs`) is a deliberate, separate, later pass —
+   only do it if explicitly asked, and only after this repo's packages are proven working across all
+   RIDs in CI.
 5. **`win-arm64` and `linux-arm64` are stretch/follow-up RIDs**, not in the CI matrix yet — GitHub-hosted
    native ARM runner availability needs verifying before adding them.
 
-## Status as of the initial scaffold (commit `584816e`)
+## Status
 
 - Full repo skeleton exists: `vcpkg.json`/`vcpkg-configuration.json`, four `pack/TINS.Native.<rid>/`
-  packaging projects, `vendor/win-x64/` binaries, `scripts/stage-native.ps1`,
-  `.github/workflows/ci.yml`, `smoke/` test project.
+  packaging projects, `scripts/stage-native.ps1`, `.github/workflows/ci.yml`, `smoke/` test project.
 - **Verified locally, win-x64 only:** packed `TINS.Native.win-x64` (using `tins-lib`'s existing
   win-x64 FFTW/OpenBLAS binaries as a stand-in for what CI's vcpkg build will produce), confirmed the
   nupkg's `runtimes/win-x64/native/` layout is correct via `unzip -l`, then did a full round-trip —
-  local folder feed → `PackageReference` → restore → run — and the smoke test successfully loaded all
-  five libraries and called a live OpenBLAS export (`openblas_get_num_threads()`).
+  local folder feed → `PackageReference` → restore → run — and the smoke test successfully loaded
+  both FFTW libraries and OpenBLAS and called a live OpenBLAS export
+  (`openblas_get_num_threads()`). (This was originally verified against 5 libraries including the
+  since-removed `libeigenexports`/`libdpss`; the smoke test and this repo's scope have both been
+  trimmed down to just FFTW+OpenBLAS since.)
 - **Not verified at all:** the actual vcpkg builds (FFTW/OpenBLAS built from source), and everything on
   Linux/macOS. **No GitHub remote exists yet for this repo — CI has never run.** The
   `scripts/stage-native.ps1` glob patterns for locating vcpkg's build output are a best-effort based on
@@ -102,7 +110,7 @@ unzip -l artifacts/nupkg/TINS.Native.win-x64.*.nupkg
 # End-to-end local smoke test (mirrors what CI's "Smoke test" step does)
 dotnet nuget add source "C:\_code\tins-lib-native\artifacts\nupkg" --name local-native
 dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.win-x64 --version <version-from-nupkg-filename> --source local-native
-dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release -p:SmokeRid=win-x64
+dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release
 # Clean up afterward -- both of these are test-only, not meant to be committed or left registered:
 dotnet nuget remove source local-native
 # (then revert the PackageReference dotnet add package just added to smoke/Tins.Native.Smoke.csproj --
@@ -122,6 +130,5 @@ directly as shown above.
 | `vcpkg.json` / `vcpkg-configuration.json` | vcpkg manifest — FFTW + OpenBLAS dependencies, pinned baseline |
 | `scripts/stage-native.ps1` | Flattens vcpkg's per-triplet build output into `runtimes/<rid>/native/` for packing — **the least-verified part of this repo** |
 | `pack/TINS.Native.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID |
-| `vendor/win-x64/` | Pre-built `libeigenexports.dll`/`libdpss.dll`, no CI build |
 | `.github/workflows/ci.yml` | Matrix build: vcpkg install → stage → pack → smoke test → upload artifact |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist |

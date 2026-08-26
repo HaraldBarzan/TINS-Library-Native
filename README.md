@@ -13,15 +13,15 @@ content, no managed assembly. Consumers add exactly the RID package(s) they ship
 |---|---|---|---|---|
 | FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) |
 | OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) |
-| Eigen wrapper (`libeigenexports`) | vendored binary only | not available | not available | not available |
-| DPSS (`libdpss`) | vendored binary only | not available | not available | not available |
 
 FFTW and OpenBLAS are built from source per-platform in CI via [vcpkg](https://vcpkg.io) (see
-`vcpkg.json`, `.github/workflows/ci.yml`). `libeigenexports`/`libdpss` are TINS's own custom C++
-wrappers; no source is currently tracked anywhere for them (see `vendor/win-x64/NOTES.md`), so they're
-copied in as pre-built win-x64 binaries with no CI build step. Until that source is recovered or
-rewritten, `SingularValueDecomposition`/`PrincipalComponentAnalysis` and multitaper spectral/coherence
-analysis (`SpikeSpectrumAnalyzer`, `SpikeFieldCoherenceMT`) in `TINS.Core` remain win-x64-only.
+`vcpkg.json`, `.github/workflows/ci.yml`) — full parity across all four RIDs, no platform gaps.
+
+`TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
+(`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis); both were replaced with pure
+managed code directly in `TINS.Core` (SVD/PCA now use the `OpenBLAS.SGESVD` call already covered by
+this repo; DPSS is a managed tridiagonal-eigensolver implementation), so there was never a need to
+build or vendor them here.
 
 `win-arm64` and `linux-arm64` are follow-ups, not yet in the CI matrix — pending verification of
 GitHub-hosted native ARM runner availability.
@@ -36,8 +36,6 @@ is no automated publish step yet — download the artifacts and drop them into a
 
 - `vcpkg.json` / `vcpkg-configuration.json` — manifest-mode dependencies (`fftw3`, `openblas`) and a
   pinned `builtin-baseline` for reproducible builds.
-- `vendor/win-x64/` — pre-built `libeigenexports.dll` / `libdpss.dll`, copied from `TINS-Library`
-  (see `NOTES.md` there for provenance).
 - `pack/TINS.Native.<rid>/` — one minimal native-asset-only `.csproj` per RID.
 - `scripts/stage-native.ps1` — copies vcpkg's build output into a flat `runtimes/<rid>/native/`
   staging folder consumed by the pack step.

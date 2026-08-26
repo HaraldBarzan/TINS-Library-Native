@@ -60,7 +60,7 @@ jobs:
         run: |
           dotnet nuget add source "${{ github.workspace }}/artifacts/nupkg" --name local-native
           dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }} --prerelease --source local-native
-          dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release -p:SmokeRid=${{ matrix.rid }}
+          dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release
 
       - uses: actions/upload-artifact@v4
         with:

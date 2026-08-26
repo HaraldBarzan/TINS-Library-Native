@@ -24,11 +24,6 @@ Check("libopenblas", handle =>
     Console.WriteLine($"    openblas_get_num_threads() = {threads}");
 });
 
-#if SMOKE_RID_win_x64
-Check("libeigenexports", _ => { });
-Check("libdpss", handle => NativeLibrary.GetExport(handle, "DPSS"));
-#endif
-
 Console.WriteLine(failures == 0 ? "\nAll native libraries resolved successfully." : $"\n{failures} check(s) FAILED.");
 return failures == 0 ? 0 : 1;
 
