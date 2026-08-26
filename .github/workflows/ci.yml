@@ -99,7 +99,14 @@ jobs:
           $version = $nupkg.BaseName -replace "^TINS\.Native\.${{ matrix.rid }}\.", ""
           Write-Host "Smoke-testing TINS.Native.${{ matrix.rid }} version $version"
 
-          dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }} --version $version --source local-native
+          # No --source here: passing the registered source NAME ("local-native") to
+          # `dotnet add package --source` doesn't resolve it as that named source -- it's
+          # treated as a literal path instead, which then doesn't exist, and restore fails
+          # with NU1301 (confirmed in a real CI run). The source is already registered
+          # above via `dotnet nuget add source --name local-native`, so it's already part
+          # of the default set for this restore without needing --source at all -- this
+          # matches the CLAUDE.md-documented gotcha with dotnet add package --source.
+          dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }} --version $version
           dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release
 
       - uses: actions/upload-artifact@v4

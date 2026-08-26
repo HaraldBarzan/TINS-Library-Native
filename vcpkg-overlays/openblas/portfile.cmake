@@ -61,6 +61,14 @@ vcpkg_cmake_configure(
         # (like fftw3's) predates CMake 3.5 and was never updated -- same CMake-4.x removal,
         # same documented escape hatch, see the fftw3 overlay's portfile.cmake for detail.
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        # OpenBLAS's generic SIMD abstraction layer (kernel/x86_64/../arm/sum.c via
+        # simd/intrin_avx512.h) hits a real GCC 13 bug on Linux -- "inlining failed in call
+        # to 'always_inline' ... target specific option mismatch" -- when the auto-detected
+        # TARGET for the build machine's CPU enables AVX-512. NO_AVX512 is OpenBLAS's own
+        # documented flag (cmake/system.cmake) to disable that code path; ties into the
+        # already-deferred dynamic-arch/CPU-portability discussion (see CLAUDE.md) rather
+        # than reopening it here.
+        -DNO_AVX512=1
     MAYBE_UNUSED_VARIABLES
         GETARCH_BINARY_DIR
 )

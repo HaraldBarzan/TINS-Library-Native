@@ -1,0 +1,7 @@
+# Force LF checkout everywhere, regardless of each client's/runner's core.autocrlf.
+# Needed because the git-committed blobs are already LF-clean (verified), but a Windows
+# CI runner with the common core.autocrlf=true default checks them out as CRLF absent this
+# file -- which corrupts vcpkg-overlays/**/*.patch (unified diffs are line-ending-sensitive)
+# and made "vcpkg install" fail with "Applying patch failed: error: corrupt patch at" on
+# win-x64 in a real CI run.
+* text=auto eol=lf
