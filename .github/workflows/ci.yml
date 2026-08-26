@@ -16,9 +16,16 @@ jobs:
           - rid: linux-x64
             os: ubuntu-latest
             triplet: x64-linux-dynamic
-          - rid: osx-x64
-            os: macos-13
-            triplet: x64-osx-dynamic
+          # osx-x64 temporarily out of the CI matrix (not dropped from the codebase --
+          # pack/TINS.Native.osx-x64/ and the RID package itself are untouched). Two
+          # reasons: (1) macOS runners cost 10x against GitHub Actions' free included
+          # minutes, and this repo's free monthly quota got exhausted standing up the
+          # other three legs; (2) most Macs actually running this today are Apple
+          # Silicon (osx-arm64), so x64 is lower priority. Uncomment to re-enable once
+          # quota allows or x64 Mac support is actually needed.
+          # - rid: osx-x64
+          #   os: macos-13
+          #   triplet: x64-osx-dynamic
           - rid: osx-arm64
             os: macos-14
             triplet: arm64-osx-dynamic

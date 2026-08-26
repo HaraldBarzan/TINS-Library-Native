@@ -13,11 +13,15 @@ cross-platform test project) instead of adding each one individually.
 
 | Library | win-x64 | linux-x64 | osx-x64 | osx-arm64 |
 |---|---|---|---|---|
-| FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) |
-| OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) |
+| FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) |
+| OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) |
 
 FFTW and OpenBLAS are built from source per-platform in CI via [vcpkg](https://vcpkg.io) (see
-`vcpkg.json`, `.github/workflows/ci.yml`) — full parity across all four RIDs, no platform gaps.
+`vcpkg.json`, `.github/workflows/ci.yml`). `osx-x64` is temporarily commented out of the CI matrix —
+not dropped from the codebase, `pack/TINS.Native.osx-x64/` is untouched — both because GitHub Actions'
+free monthly minutes (macOS runners cost 10x wall-clock time against that quota) were exhausted
+standing up the other three RIDs, and because most Macs running this today are Apple Silicon
+(`osx-arm64`) rather than Intel. Uncomment the matrix entry in `ci.yml` to bring it back.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis); both were replaced with pure
@@ -51,7 +55,9 @@ is no automated publish step yet — download the artifacts and drop them into a
 
 ## Status
 
-`TINS-Library`'s `TINS.Core` still bundles its own win-x64 natives directly (unchanged) while this
-repo is being built out. The two will be reconciled — `TINS.Core` dropping its bundled natives in
-favor of an explicit `TINS.Native.<rid>` reference — once the packages here are verified working
-end-to-end.
+`win-x64`, `linux-x64`, and `osx-arm64` have all been built, packed, and smoke-tested successfully in
+real CI, with genuine (not placeholder) native binaries. `osx-x64` is paused (see Scope above).
+`TINS-Library`'s `TINS.Core` still bundles its own win-x64 natives directly (unchanged) while this repo
+is being built out. The two will be reconciled — `TINS.Core` dropping its bundled natives in favor of
+an explicit `TINS.Native.<rid>` reference — once the remaining pieces (real `osx-x64`, if/when
+re-enabled) are verified too.
