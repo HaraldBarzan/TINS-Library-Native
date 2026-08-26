@@ -15,6 +15,14 @@ meta-package with no native content of its own — it just depends on all four R
 consumer (e.g. a cross-platform test project) that wants every desktop RID at once instead of adding
 each one individually.
 
+> **Current package readiness: `TINS.Native.win-x64`, `TINS.Native.linux-x64`, and
+> `TINS.Native.osx-arm64` are real and working — built, packed, and smoke-tested in CI with genuine
+> vcpkg source builds. `TINS.Native.osx-x64` is NOT ready — no real build has ever been produced for
+> it (only a non-functional placeholder), and it's currently paused out of the CI matrix pending
+> GitHub Actions quota. Any downstream project (e.g. `tins-lib`) documenting or consuming these
+> packages should reflect this: 3 of 4 RIDs ready, osx-x64 not yet.** See Status below for why and
+> what it would take to finish it.
+
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis) — this repo originally vendored
 pre-built win-x64-only copies of both (see git history around commit `390d0a3` if you need it). Both
