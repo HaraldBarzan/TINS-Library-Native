@@ -27,7 +27,14 @@ jobs:
     name: ${{ matrix.rid }}
 
     steps:
+      # fetch-depth: 0 (full history) is required for MinVer to compute a correct commit
+      # height. The default shallow (depth-1) checkout only shows one commit, so MinVer
+      # can't count commits-since-tag and silently produces a version with no height
+      # component at all (confirmed: a real CI pack produced "0.0.0-alpha.1.nupkg" instead
+      # of the expected "0.0.0-alpha.1.<height>.nupkg" every local build actually gets).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -62,6 +69,17 @@ jobs:
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: "vcpkg.json"
+          # Without this, run-vcpkg checks out its own bundled default vcpkg commit (Feb
+          # 2025 vintage as of this writing), whose scripts/cmake/vcpkg_acquire_msys.cmake
+          # references an msys2-runtime package build that mirrors have since pruned (all
+          # 6 mirrors returned 404, confirmed in a real CI run). Pinning a current tagged
+          # release instead gets fresh, currently-valid download URLs. This is independent
+          # of vcpkg-configuration.json's builtin-baseline (that only governs port-version
+          # resolution against the registry, not which vcpkg-tool/scripts commit gets
+          # checked out) -- deliberately left alone here, since bumping it too would need
+          # our openblas overlay's pinned 0.3.29 reconciled against this newer baseline's
+          # 0.3.33 expectation, which isn't needed just to fix this download failure.
+          vcpkgGitCommitId: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
 
       - name: vcpkg install (${{ matrix.triplet }})
         shell: pwsh
@@ -84,7 +102,17 @@ jobs:
         shell: pwsh
         run: |
           dotnet nuget add source "${{ github.workspace }}/artifacts/nupkg" --name local-native
-          dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }} --prerelease --source local-native
+
+          # --prerelease (no explicit version) failed against this freshly-added local
+          # folder source in a real CI run ("There are no versions available for the
+          # package"), even though the nupkg was sitting right there -- every manual
+          # verification of this whole pipeline used an explicit --version instead, so
+          # this extracts the exact version from the nupkg just built and pins to that.
+          $nupkg = Get-ChildItem "artifacts/nupkg/TINS.Native.${{ matrix.rid }}.*.nupkg" | Select-Object -First 1
+          $version = $nupkg.BaseName -replace "^TINS\.Native\.${{ matrix.rid }}\.", ""
+          Write-Host "Smoke-testing TINS.Native.${{ matrix.rid }} version $version"
+
+          dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }} --version $version --source local-native
           dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release
 
       - uses: actions/upload-artifact@v4
