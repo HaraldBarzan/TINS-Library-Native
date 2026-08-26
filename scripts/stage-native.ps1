@@ -25,22 +25,26 @@
     precision libraries are needed here -- fftw3l (long double) is skipped, since
     TINS.Core's FFTW.cs only ever loads "libfftw3-3"/"libfftw3f-3".
 
-    Confirmed against a real "vcpkg install --triplet x64-windows" build (2026-08-26): MSVC
-    output has NO "lib" prefix and no "-3"/"f-3" suffix -- the actual files are "fftw3.dll",
-    "fftw3f.dll", "openblas.dll" (unlike a MinGW/Unix build, MSVC doesn't apply the
-    lib-prefix/soname convention). But NativeImportResolver (and smoke/Resolver.cs's copy of
-    it) only appends ".dll" to the base name on Windows -- it does not strip a "lib" prefix
-    there the way it does for the Linux/macOS branch -- so it looks for "libfftw3-3.dll" /
-    "libopenblas.dll" specifically. The win- branch below renames the real vcpkg output to
-    those expected names on copy, so the packaged asset matches what the resolver actually
-    probes for without needing to touch tins-lib's resolver.
-
-    The Linux/macOS filenames are still NOT verified against a real build (no toolchain
-    exercised there yet) -- the glob patterns for those platforms remain a best-effort
-    guess based on standard lib-prefixed shared-object naming conventions, which (unlike
-    Windows) should already match without renaming since non-MSVC toolchains apply that
-    convention themselves. Confirm on the first real Linux/macOS CI run and adjust if a
-    pattern misses or over-matches.
+    Confirmed against real vcpkg builds (2026-08-26, win-x64 and osx-arm64; linux-x64
+    presumed identical to osx-arm64, same Unix shared-library convention, pending its own
+    confirmation): NativeImportResolver (and smoke/Resolver.cs's copy of it) specifically
+    looks for "libfftw3-3"/"libfftw3f-3"/"libopenblas" plus the platform's native
+    extension -- but real vcpkg output never produces a file with that exact "-3"/"f-3"
+    suffix on ANY platform:
+      - Windows (MSVC): "fftw3.dll", "fftw3f.dll", "openblas.dll" -- no "lib" prefix, no
+        suffix at all (MSVC doesn't apply the MinGW/Unix lib-prefix/soname convention the
+        way tins-lib's currently-bundled binaries do).
+      - macOS/Linux: "libfftw3.dylib"/"libfftw3.so" (the unversioned dev symlink CMake
+        installs alongside the real soname-versioned file) -- "lib"-prefixed as expected,
+        but still no "-3"/"f-3" suffix; OpenBLAS's soname convention needs no suffix at all
+        ("libopenblas.so"/".dylib" is used as-is, which already matches what the resolver
+        wants -- no rename needed for openblas specifically, on any platform).
+    So every platform needs the fftw3/fftw3f rename below; only the source filenames
+    differ. Renaming (rather than just glob-copying under the original name) is what makes
+    the packaged asset match what the resolver actually probes for, without touching
+    tins-lib's resolver itself. Only the single needed file per library is staged --
+    versioned symlink variants (e.g. "libfftw3.3.6.9.dylib") are never referenced by the
+    resolver and are deliberately not copied.
 #>
 param(
     [Parameter(Mandatory)] [string] $Triplet,
@@ -65,51 +69,47 @@ if (-not $searchDirs) {
     throw "Neither bin/ nor lib/ found under $installedDir"
 }
 
-$copied = @()
-
-if ($Rid -match "^win-") {
-    # Real MSVC vcpkg output has no "lib" prefix / "-3" suffix -- rename on copy to match
-    # what NativeImportResolver actually probes for on Windows (see .NOTES above).
-    $renameMap = @{
-        "fftw3.dll"    = "libfftw3-3.dll"
-        "fftw3f.dll"   = "libfftw3f-3.dll"
-        "openblas.dll" = "libopenblas.dll"
+# Real vcpkg source name -> name NativeImportResolver actually probes for, per platform.
+$renameMap = switch -Regex ($Rid) {
+    "^win-" {
+        @{
+            "fftw3.dll"    = "libfftw3-3.dll"
+            "fftw3f.dll"   = "libfftw3f-3.dll"
+            "openblas.dll" = "libopenblas.dll"
+        }
     }
-    foreach ($dir in $searchDirs) {
-        foreach ($sourceName in $renameMap.Keys) {
-            $sourcePath = Join-Path $dir $sourceName
-            if (Test-Path $sourcePath) {
-                $destName = $renameMap[$sourceName]
-                Copy-Item -Path $sourcePath -Destination (Join-Path $OutputRoot $destName) -Force
-                $copied += $destName
-            }
+    "^osx-" {
+        @{
+            "libfftw3.dylib"    = "libfftw3-3.dylib"
+            "libfftw3f.dylib"   = "libfftw3f-3.dylib"
+            "libopenblas.dylib" = "libopenblas.dylib"
+        }
+    }
+    default {
+        # linux-*
+        @{
+            "libfftw3.so"    = "libfftw3-3.so"
+            "libfftw3f.so"   = "libfftw3f-3.so"
+            "libopenblas.so" = "libopenblas.so"
         }
     }
 }
-else {
-    # Linux/macOS: not yet verified against a real build -- best-effort glob patterns
-    # assuming the toolchain applies standard lib-prefixed shared-object naming itself
-    # (unlike Windows, so no rename should be needed here). "*fftw3l*" is deliberately
-    # excluded (long-double precision, unused by TINS.Core).
-    $patterns = switch -Regex ($Rid) {
-        "^osx-"  { @("libfftw3.*.dylib", "libfftw3f.*.dylib", "libfftw3.dylib", "libfftw3f.dylib", "libopenblas.*.dylib", "libopenblas.dylib") }
-        default  { @("libfftw3.so*", "libfftw3f.so*", "libopenblas.so*") }  # linux-*
-    }
-    foreach ($dir in $searchDirs) {
-        foreach ($pattern in $patterns) {
-            Get-ChildItem -Path $dir -Filter $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
-                if ($_.Name -notmatch "fftw3l") {
-                    Copy-Item -Path $_.FullName -Destination $OutputRoot -Force
-                    $copied += $_.Name
-                }
-            }
+
+$copied = @()
+foreach ($dir in $searchDirs) {
+    foreach ($sourceName in $renameMap.Keys) {
+        $sourcePath = Join-Path $dir $sourceName
+        if (Test-Path $sourcePath) {
+            $destName = $renameMap[$sourceName]
+            Copy-Item -Path $sourcePath -Destination (Join-Path $OutputRoot $destName) -Force
+            $copied += $destName
         }
     }
 }
 
 if (-not $copied) {
     throw "No FFTW/OpenBLAS shared libraries matched under $($searchDirs -join ', ') for RID '$Rid'. " +
-          "Inspect that directory's actual contents and fix the glob patterns in this script."
+          "Inspect that directory's actual contents and fix the rename map in this script."
 }
 
 Write-Host "Staged $($copied.Count) file(s) into $OutputRoot`:"
