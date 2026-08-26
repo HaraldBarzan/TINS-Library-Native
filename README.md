@@ -5,7 +5,9 @@ Native (C/C++) dependency builds for [TINS-Library](https://github.com/HaraldBar
 itself. CI builds one NuGet package per RID — `TINS.Native.win-x64`, `TINS.Native.linux-x64`,
 `TINS.Native.osx-x64`, `TINS.Native.osx-arm64` — each containing only `runtimes/<rid>/native/*`
 content, no managed assembly. Consumers add exactly the RID package(s) they ship for, alongside
-`TINS.Core`.
+`TINS.Core`. A fifth package, `TINS.Native.Desktop`, is a meta-package with no native content of its
+own that depends on all four RID packages, for a consumer that wants every desktop RID at once (e.g. a
+cross-platform test project) instead of adding each one individually.
 
 ## Scope (current)
 
@@ -37,6 +39,8 @@ is no automated publish step yet — download the artifacts and drop them into a
 - `vcpkg.json` / `vcpkg-configuration.json` — manifest-mode dependencies (`fftw3`, `openblas`) and a
   pinned `builtin-baseline` for reproducible builds.
 - `pack/TINS.Native.<rid>/` — one minimal native-asset-only `.csproj` per RID.
+- `pack/TINS.Native.Desktop/` — meta-package depending on all four RID packages, no native content of
+  its own.
 - `scripts/stage-native.ps1` — copies vcpkg's build output into a flat `runtimes/<rid>/native/`
   staging folder consumed by the pack step.
 - `smoke/` — a small console app with its own corrected native-library resolver (fixes a

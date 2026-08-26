@@ -10,7 +10,10 @@ repository.
 locally) — FFTW and OpenBLAS. It exists as a separate repo because these libraries change far less
 often than TINS.Core itself, and the goal is one NuGet package per RID (`TINS.Native.win-x64`,
 `TINS.Native.linux-x64`, `TINS.Native.osx-x64`, `TINS.Native.osx-arm64`) that TINS.Core consumers add
-explicitly for whichever platform(s) they ship.
+explicitly for whichever platform(s) they ship. A fifth package, `TINS.Native.Desktop`, is a
+meta-package with no native content of its own — it just depends on all four RID packages, for a
+consumer (e.g. a cross-platform test project) that wants every desktop RID at once instead of adding
+each one individually.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis) — this repo originally vendored
@@ -48,28 +51,81 @@ propose an alternative to one of these, stop and re-read this list instead:
    RIDs in CI.
 5. **`win-arm64` and `linux-arm64` are stretch/follow-up RIDs**, not in the CI matrix yet — GitHub-hosted
    native ARM runner availability needs verifying before adding them.
+6. **OpenBLAS is built via a local overlay port (`vcpkg-overlays/openblas/`), not vcpkg's stock port.**
+   This is load-bearing, not a style choice: upstream vcpkg's `openblas` port unconditionally passes
+   `-DBUILD_WITHOUT_LAPACK=ON` (no feature flag to turn it off), which drops LAPACK — including
+   `SGESVD` — entirely. `tins-lib`'s `SingularValueDecomposition` depends on `OpenBLAS.SGESVD` (see
+   Project Overview), so a stock-port build is silently broken for that path even though it links and
+   loads fine. Do not drop this overlay or "simplify" back to the registry port without re-solving the
+   LAPACK problem another way. Full detail and verification numbers below.
+7. **Versioning is MinVer-driven**, same mechanism as `tins-lib` (`Directory.Build.props`, tag prefix
+   `v`, no fixed `<Version>` per project). Unlike `tins-lib` — which leaves MinVer's default identifier
+   at its own default (`alpha.0`, since it has no tags either) — this repo pins
+   `MinVerDefaultPreReleaseIdentifiers` to `alpha.1`, so untagged builds pack as `0.0.0-alpha.1.<height>`
+   instead of MinVer's un-configured `0.0.0-alpha.0.<height>`. Once real release tags (`vX.Y.Z`) start
+   getting pushed, this identifier stops applying (it only governs the untagged/pre-first-tag case).
+8. **`TINS.Native.Desktop`'s `PackageReference`s to the four RID packages use floating versions**
+   (`0.0.0-alpha.1.*`), not `$(Version)`. MinVer only sets `$(Version)` via a build target that runs
+   *after* restore, but restore needs a concrete version immediately to resolve those references —
+   `$(Version)` is still unset (defaults to `1.0.0`) at that point, which fails restore (`NU1102`,
+   tried it). Floating versions resolve against whatever's already sitting in the feed instead, no
+   MSBuild property evaluation needed. This ties the floating pattern to whatever
+   `MinVerDefaultPreReleaseIdentifiers` currently is — if that changes (point 7), update the pattern in
+   `pack/TINS.Native.Desktop/TINS.Native.Desktop.csproj` to match.
 
 ## Status
 
 - Full repo skeleton exists: `vcpkg.json`/`vcpkg-configuration.json`, four `pack/TINS.Native.<rid>/`
   packaging projects, `scripts/stage-native.ps1`, `.github/workflows/ci.yml`, `smoke/` test project.
-- **Verified locally, win-x64 only:** packed `TINS.Native.win-x64` (using `tins-lib`'s existing
-  win-x64 FFTW/OpenBLAS binaries as a stand-in for what CI's vcpkg build will produce), confirmed the
-  nupkg's `runtimes/win-x64/native/` layout is correct via `unzip -l`, then did a full round-trip —
-  local folder feed → `PackageReference` → restore → run — and the smoke test successfully loaded
-  both FFTW libraries and OpenBLAS and called a live OpenBLAS export
-  (`openblas_get_num_threads()`). (This was originally verified against 5 libraries including the
-  since-removed `libeigenexports`/`libdpss`; the smoke test and this repo's scope have both been
-  trimmed down to just FFTW+OpenBLAS since.)
-- **Not verified at all:** the actual vcpkg builds (FFTW/OpenBLAS built from source), and everything on
-  Linux/macOS. **No GitHub remote exists yet for this repo — CI has never run.** The
-  `scripts/stage-native.ps1` glob patterns for locating vcpkg's build output are a best-effort based on
-  each library's documented naming convention, explicitly *not* verified against a real `vcpkg install`
-  output (no vcpkg/C++ toolchain was available in the environment that scaffolded this repo). The
-  first real CI run for each RID is the actual test — expect to have to adjust that script's patterns.
-- The `vcpkg-configuration.json` `builtin-baseline` SHA was fetched from `microsoft/vcpkg`'s `master`
-  branch HEAD at scaffold time; it will drift out of date and can be bumped freely, it's just a
-  reproducibility pin.
+- **Verified locally, win-x64, with a real vcpkg source build (2026-08-26):** ran an actual
+  `vcpkg install --triplet x64-windows` (not a stand-in) against MSVC Build Tools, staged the output,
+  packed `TINS.Native.win-x64.0.0.0-alpha.1.2.nupkg` straight into `C:\nugetlocal`, confirmed the
+  `runtimes/win-x64/native/` layout via `unzip -l`, then round-tripped it into `smoke/` via
+  `PackageReference` — all three libraries loaded and resolved symbols (including a live
+  `openblas_get_num_threads()` call). This supersedes the earlier stand-in-binaries verification
+  (which used `tins-lib`'s existing win-x64 FFTW/OpenBLAS binaries in place of a real vcpkg build).
+- **Environment notes from that run**, in case a future session hits the same gaps on a fresh machine:
+  - MSVC wasn't installed at all initially; VS 2022 Build Tools (C++ workload) was installed via
+    `winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "... --installPath
+    D:\VSBuildTools --add Microsoft.VisualStudio.Workload.VCTools ..."` — redirected off the `C:` drive
+    since it's a multi-GB install. `vcpkg` finds it automatically afterward regardless of install path.
+  - The local `vcpkg` install (`/c/vcpkg`) needed a plain `git fetch` before it could even see the
+    pinned `builtin-baseline` commit as a git object.
+  - Once fetched, that pinned baseline (`00c5775...`) turned out to be **internally inconsistent**, not
+    just stale: its `baseline.json` claimed `fftw3@3.3.11`/`openblas@0.3.33`, but the version-history
+    files at that same commit only go up to `3.3.10`/`0.3.29`. Repinned to
+    `117524bad2789b8aa6954324a1bee4bffb7d6d09` — the commit the locally-installed `vcpkg` binary itself
+    ships with, confirmed self-consistent for both ports. If this drifts again, re-pin to whatever
+    commit the `vcpkg` binary in use actually reports (`git -C <vcpkg root> rev-parse HEAD`), not an
+    arbitrary fetched `master` tip.
+  - `scripts/stage-native.ps1`'s multi-argument `Join-Path` calls only work under `pwsh`/PS7 (what CI
+    uses); Windows PowerShell 5.1 only accepts one child path per call. Rewritten as chained 2-arg
+    `Join-Path` calls so the script runs under either — no behavior change under `pwsh`.
+- **Still not verified:** everything on Linux/macOS (no GitHub remote exists yet for this repo — CI has
+  never run). The win-x64 leg is real and proven end-to-end now; Linux/macOS still rely on the
+  best-effort glob patterns in `scripts/stage-native.ps1` and are the next thing to actually exercise.
+  A GitHub remote for this repo is expected soon (user is creating one); once it's wired up, redo the
+  Linux/macOS legs for real via CI and replace the placeholder packages below.
+- **`TINS.Native.linux-x64`/`osx-x64`/`osx-arm64` in `C:\nugetlocal` right now are PLACEHOLDER-only**
+  (2026-08-26), not real builds — this machine is Windows-only with no Docker/WSL2 and no Mac hardware,
+  so genuine Linux/macOS compiles aren't possible here; real ones need the GitHub Actions runners in
+  `.github/workflows/ci.yml` (pending the GitHub remote above). The placeholder files are plain text
+  stand-ins with a `PLACEHOLDER -- not a real build` marker line, named to match
+  `stage-native.ps1`'s *existing, still-unverified* Linux/macOS glob patterns
+  (`libfftw3.so`/`libfftw3f.so`/`libopenblas.so` for linux-x64; `libfftw3.dylib`/`libfftw3f.dylib`/
+  `libopenblas.dylib` for both osx RIDs) so the staging script's non-Windows branch actually ran for
+  real (mechanically) rather than being hand-faked at the final artifact. **Do not treat these three
+  nupkgs as functional** — they exist purely to prove the packaging/aggregation plumbing below, and
+  should be overwritten by real CI-built packages once available.
+- **`pack/TINS.Native.Desktop/` added and verified (2026-08-26):** a meta-package with no native content
+  of its own that depends on all four RID packages. Referencing just `TINS.Native.Desktop` from
+  `smoke/` pulled in all four transitively — confirmed via `smoke/obj/project.assets.json` that every
+  `runtimes/<rid>/native/*` asset resolved correctly — and a plain `dotnet build` (no RID specified)
+  copied *all four* RID subfolders into `smoke/bin/.../runtimes/<rid>/native/` (not just the host's
+  own win-x64), which the host (win-x64) then still loaded correctly via .NET's own deps.json-aware
+  native-library probing of that nested folder. This proves the aggregation/packaging plumbing works;
+  it does not (and cannot, from this Windows machine) prove the Linux/macOS binaries themselves are
+  valid — see the placeholder note above.
 
 ## Known open uncertainties (verify before trusting, don't assume)
 
@@ -80,9 +136,63 @@ propose an alternative to one of these, stop and re-read this list instead:
 - Whether GitHub still hosts an Intel macOS runner image (`macos-13` in the current workflow) — Apple
   Silicon has been the default (`macos-latest`/`macos-14`+) for a while and Intel images may be on a
   deprecation path. Check before relying on this leg.
-- Exact filenames vcpkg emits per platform for FFTW/OpenBLAS shared libraries (particularly whether
-  Windows output really matches today's bundled names — `libfftw3-3.dll`, `libopenblas.dll` — or
-  something vcpkg-specific).
+- Exact filenames vcpkg emits for FFTW/OpenBLAS on Linux/macOS are still unconfirmed. **Windows is now
+  confirmed** (see below) and turned out to need a rename step, so don't assume Linux/macOS's
+  `lib`-prefixed `.so`/`.dylib` glob patterns in `stage-native.ps1` are actually right either — verify
+  on the first real Linux/macOS build instead of trusting the current patterns.
+
+## Confirmed: real vcpkg output on win-x64 needs renaming (fixed in `stage-native.ps1`)
+
+A real `vcpkg install --triplet x64-windows` produces **`fftw3.dll`, `fftw3f.dll`, `fftw3l.dll`,
+`openblas.dll`** — no `lib` prefix, no `-3`/`f-3` suffix (MSVC doesn't apply the MinGW/Unix
+lib-prefix/soname convention the way `tins-lib`'s currently-bundled binaries do). But
+`NativeImportResolver` (and `smoke/Resolver.cs`'s copy of it) only appends `.dll` to the base name on
+Windows — it does **not** strip a `lib` prefix there the way it does on the Linux/macOS branch — so it
+specifically looks for `libfftw3-3.dll` / `libopenblas.dll`. `scripts/stage-native.ps1`'s win- branch
+now renames the real vcpkg output to those expected names on copy (`fftw3.dll` → `libfftw3-3.dll`,
+`fftw3f.dll` → `libfftw3f-3.dll`, `openblas.dll` → `libopenblas.dll`), so the packaged asset matches
+what the resolver actually probes for, without touching `tins-lib`'s resolver. `fftw3l.dll` is still
+skipped (long-double precision, unused). Linux/macOS have **not** been confirmed to need the same
+treatment — their toolchains normally apply `lib`-prefixing themselves, but that's still an assumption
+until proven on a real build.
+
+## Confirmed: stock vcpkg OpenBLAS is missing LAPACK entirely (fixed via overlay port)
+
+Prompted by a real question: our first vcpkg-built `openblas.dll` was ~1.78MB vs. the ~51MB binary
+`tins-lib` currently bundles. Verified via `dumpbin /exports` on both (run through the PowerShell tool,
+not Bash — MSYS mangles a bare `/exports` flag into a path):
+
+- **Stock vcpkg build:** 1,741 exports, zero LAPACK routines (no `gesvd`, `getrf`, `syev`, `geqrf`,
+  `potrf` — nothing). Root cause, in vcpkg's own `ports/openblas/portfile.cmake`: it passes
+  `-DBUILD_WITHOUT_LAPACK=ON -DNOFORTRAN=ON` to CMake **unconditionally** — not gated by any vcpkg
+  feature, so there is no `[lapack]` feature to opt into. `tins-lib`'s bundled 51MB binary (9,568
+  exports, includes `SGESVD` etc.) was almost certainly built upstream with MinGW + real `gfortran`,
+  a different toolchain path than vcpkg's MSVC-based port.
+- **Fix:** `vcpkg-overlays/openblas/` is a full copy of the upstream port with one flag flipped —
+  `-DBUILD_WITHOUT_LAPACK=OFF` (keeping `-DNOFORTRAN=ON`; OpenBLAS ships C-translated LAPACK sources
+  for exactly this no-Fortran-compiler case, which is how official Windows OpenBLAS DLLs get full
+  LAPACK without a real `gfortran` — confirmed this combination doesn't need one). Wired in via
+  `vcpkg-configuration.json`'s `overlay-ports` array, which vcpkg picks up automatically in manifest
+  mode — **no CI YAML changes were needed**, `vcpkg install` in `ci.yml` just works once the overlay
+  exists. Bumped `port-version` to `1` in the overlay's `vcpkg.json` to mark it as a locally-patched
+  variant of `0.3.29`.
+- **Rebuilt and reverified (2026-08-26):** win-x64 `openblas.dll` is now 10.46MB, 6,497 exports,
+  confirmed present: `sgesvd_`, `LAPACKE_sgesvd`, plus `dgesvd_`/`cgesvd_`/`zgesvd_` (all precisions).
+  Repacked `TINS.Native.win-x64.0.0.0-alpha.1.2.nupkg` into `C:\nugetlocal` with the corrected binary,
+  cleared the stale cached copy at `~/.nuget/packages/tins.native.win-x64/`, and reran the smoke test
+  clean. Still smaller than `tins-lib`'s 51MB bundled binary — that remaining gap is `dynamic-arch`
+  (multi-microarchitecture runtime dispatch), deliberately deferred (see below), not a LAPACK gap.
+- **`dynamic-arch` was explicitly deferred, not forgotten.** vcpkg's `openblas` port's `dynamic-arch`
+  feature declares `"supports": "!windows | mingw"` — it isn't even offered for a plain MSVC build, so
+  Windows stays single-target (optimized for the build machine's CPU) regardless. Whether to chase
+  multi-target support on Linux/macOS (where the feature is at least offered) is an open follow-up,
+  not yet decided. Single-target carries a real portability risk (illegal-instruction fault on a CPU
+  older/different than the build machine's) that hasn't been addressed — don't assume it's fine for a
+  real release without revisiting this.
+- **This same LAPACK gap has not yet been verified fixed for Linux/macOS** — the overlay port change
+  applies to all platforms (nothing win-x64-specific in the portfile edit), but only win-x64 has
+  actually been rebuilt and re-checked with `dumpbin`-equivalent tooling. Confirm `SGESVD` is present
+  in the Linux/macOS builds too once real CI produces them — don't assume the fix transfers untested.
 
 ## The `NativeImportResolver` double-`lib`-prefix bug
 
@@ -127,8 +237,10 @@ directly as shown above.
 
 | File | Purpose |
 |---|---|
-| `vcpkg.json` / `vcpkg-configuration.json` | vcpkg manifest — FFTW + OpenBLAS dependencies, pinned baseline |
-| `scripts/stage-native.ps1` | Flattens vcpkg's per-triplet build output into `runtimes/<rid>/native/` for packing — **the least-verified part of this repo** |
+| `vcpkg.json` / `vcpkg-configuration.json` | vcpkg manifest — FFTW + OpenBLAS dependencies, pinned baseline, overlay-ports registration |
+| `vcpkg-overlays/openblas/` | Overlay port fixing the stock port's `BUILD_WITHOUT_LAPACK=ON` (drops `SGESVD`, which `tins-lib` depends on) — see dedicated section above |
+| `scripts/stage-native.ps1` | Flattens vcpkg's per-triplet build output into `runtimes/<rid>/native/` for packing — win- branch verified against a real build (renames to resolver-expected names); Linux/macOS branch still unverified |
 | `pack/TINS.Native.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID |
+| `pack/TINS.Native.Desktop/*.csproj` | Meta-package depending on all four RID packages, no native content of its own |
 | `.github/workflows/ci.yml` | Matrix build: vcpkg install → stage → pack → smoke test → upload artifact |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist |

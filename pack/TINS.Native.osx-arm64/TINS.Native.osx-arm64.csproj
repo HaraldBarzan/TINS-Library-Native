@@ -6,7 +6,7 @@
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
     <PackageId>TINS.Native.osx-arm64</PackageId>
-    <Description>Native runtime assets (FFTW, OpenBLAS) for TINS.Core on osx-arm64. Eigen wrapper / DPSS are not yet available for this RID -- see the repo README.</Description>
+    <Description>Native runtime assets (FFTW, OpenBLAS) for TINS.Core on osx-arm64.</Description>
     <PackageTags>Neuroscience, Native, FFTW, OpenBLAS, osx-arm64</PackageTags>
     <NativeStagingDir Condition="'$(NativeStagingDir)'==''">$(MSBuildThisFileDirectory)..\..\artifacts\runtimes\osx-arm64\native</NativeStagingDir>
   </PropertyGroup>

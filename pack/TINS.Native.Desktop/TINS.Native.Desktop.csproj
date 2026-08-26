@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
+    <PackageId>TINS.Native.Desktop</PackageId>
+    <Description>Meta-package bundling TINS.Native.win-x64, TINS.Native.linux-x64, TINS.Native.osx-x64, and TINS.Native.osx-arm64, so a multi-platform consumer (e.g. a cross-targeted test project) can pull in native FFTW/OpenBLAS assets for every desktop RID with a single reference instead of adding each RID package individually. A single-RID deployment should still reference just its own TINS.Native.&lt;rid&gt; package directly -- this carries no native content of its own.</Description>
+    <PackageTags>Neuroscience, Native, FFTW, OpenBLAS, Desktop</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- $(Version) isn't usable here: MinVer computes it via a build target that runs
+         *after* restore, but restore needs a concrete version right now to resolve these
+         PackageReferences (chicken and egg). Floating versions sidestep that: NuGet resolves
+         each to the highest matching version already sitting in the local feed at restore
+         time, no MSBuild property evaluation needed. This ties the pattern to whatever
+         MinVerDefaultPreReleaseIdentifiers currently is (see Directory.Build.props); update
+         both together if that identifier ever changes (e.g. once real release tags start). -->
+    <PackageReference Include="TINS.Native.win-x64" Version="0.0.0-alpha.1.*" />
+    <PackageReference Include="TINS.Native.linux-x64" Version="0.0.0-alpha.1.*" />
+    <PackageReference Include="TINS.Native.osx-x64" Version="0.0.0-alpha.1.*" />
+    <PackageReference Include="TINS.Native.osx-arm64" Version="0.0.0-alpha.1.*" />
+  </ItemGroup>
+
+</Project>
