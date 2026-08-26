@@ -62,12 +62,20 @@ vcpkg_cmake_configure(
         # same documented escape hatch, see the fftw3 overlay's portfile.cmake for detail.
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         # OpenBLAS's generic SIMD abstraction layer (kernel/x86_64/../arm/sum.c via
-        # simd/intrin_avx512.h) hits a real GCC 13 bug on Linux -- "inlining failed in call
-        # to 'always_inline' ... target specific option mismatch" -- when the auto-detected
-        # TARGET for the build machine's CPU enables AVX-512. NO_AVX512 is OpenBLAS's own
-        # documented flag (cmake/system.cmake) to disable that code path; ties into the
-        # already-deferred dynamic-arch/CPU-portability discussion (see CLAUDE.md) rather
-        # than reopening it here.
+        # simd/intrin_*.h) hits a longstanding, widely-reported OpenBLAS/GCC bug on Linux --
+        # "inlining failed in call to 'always_inline' ... target specific option mismatch"
+        # -- where the build system doesn't correctly attach matching -m<isa> flags to that
+        # translation unit. Disabling AVX512 alone (confirmed) just shifted the identical
+        # failure down to AVX2/FMA (_mm256_fmadd_ps, also confirmed in a real CI run), so
+        # all three extended-width levels are disabled together here rather than
+        # whack-a-moling one at a time -- this falls back to OpenBLAS's much more mature
+        # hand-written assembly kernels wherever available. NO_AVX/NO_AVX2/NO_AVX512 are
+        # OpenBLAS's own documented flags (cmake/system.cmake). This ties into the
+        # already-deferred dynamic-arch/CPU-portability discussion (see CLAUDE.md) --
+        # trading peak throughput for a build that actually completes, consistent with
+        # that already-agreed direction, not a new one.
+        -DNO_AVX=1
+        -DNO_AVX2=1
         -DNO_AVX512=1
     MAYBE_UNUSED_VARIABLES
         GETARCH_BINARY_DIR
