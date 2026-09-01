@@ -13,15 +13,31 @@
   <ItemGroup>
     <!-- $(Version) isn't usable here: MinVer computes it via a build target that runs
          *after* restore, but restore needs a concrete version right now to resolve these
-         PackageReferences (chicken and egg). Floating versions sidestep that: NuGet resolves
-         each to the highest matching version already sitting in the local feed at restore
-         time, no MSBuild property evaluation needed. This ties the pattern to whatever
-         MinVerDefaultPreReleaseIdentifiers currently is (see Directory.Build.props); update
-         both together if that identifier ever changes (e.g. once real release tags start). -->
-    <PackageReference Include="TINS.Native.win-x64" Version="0.0.0-alpha.1.*" />
-    <PackageReference Include="TINS.Native.linux-x64" Version="0.0.0-alpha.1.*" />
-    <PackageReference Include="TINS.Native.osx-x64" Version="0.0.0-alpha.1.*" />
-    <PackageReference Include="TINS.Native.osx-arm64" Version="0.0.0-alpha.1.*" />
+         PackageReferences (chicken and egg).
+
+         This used to be a floating version ("0.0.0-alpha.1.*"), which resolves at RESTORE
+         time to the highest matching version in the feed, but a floating spec has no
+         publishable meaning in a nuspec, so `dotnet pack` is forced to collapse it down to
+         whatever concrete version happened to resolve *at pack time* and bakes that in as
+         the minimum. Every time Desktop got repacked, that minimum silently ratcheted up to
+         the latest sibling version, so as soon as an older intermediate version of a
+         sibling package (e.g. 1.12) got pruned from a downstream feed that only mirrors the
+         latest, consumers hit NU1603 ("dependency version not found, nearest match used":
+         benign, but noisy, and a symptom of a floor that shouldn't have moved).
+
+         A plain (non-floating) version string is valid nuspec syntax as-is and NuGet
+         already treats it as a minimum-inclusive bound ">= X", so pinning to the fixed,
+         low "0.0.0-alpha.1" floor here means Desktop is satisfied by ANY sibling package
+         ever built in this alpha.1 family, regardless of its specific height, without the
+         floor moving on every repack. Restore still picks up whatever's actually present in
+         the configured feed (currently the latest of each), so local dev/testing behaves
+         the same as before; only the *baked minimum* changes. Update this (and
+         MinVerDefaultPreReleaseIdentifiers in Directory.Build.props) together if that
+         identifier ever changes (e.g. once real release tags start). -->
+    <PackageReference Include="TINS.Native.win-x64" Version="0.0.0-alpha.1" />
+    <PackageReference Include="TINS.Native.linux-x64" Version="0.0.0-alpha.1" />
+    <PackageReference Include="TINS.Native.osx-x64" Version="0.0.0-alpha.1" />
+    <PackageReference Include="TINS.Native.osx-arm64" Version="0.0.0-alpha.1" />
   </ItemGroup>
 
 </Project>
