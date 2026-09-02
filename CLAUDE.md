@@ -72,24 +72,31 @@ propose an alternative to one of these, stop and re-read this list instead:
    `MinVerDefaultPreReleaseIdentifiers` to `alpha.1`, so untagged builds pack as `0.0.0-alpha.1.<height>`
    instead of MinVer's un-configured `0.0.0-alpha.0.<height>`. Once real release tags (`vX.Y.Z`) start
    getting pushed, this identifier stops applying (it only governs the untagged/pre-first-tag case).
-8. **`TINS.Native.Desktop`'s `PackageReference`s to the four RID packages use a fixed low floor**
-   (`0.0.0-alpha.1`, no height), not `$(Version)` and not a floating version. `$(Version)` doesn't
-   work: MinVer only sets it via a build target that runs *after* restore, but restore needs a
+8. **`TINS.Native.Desktop`'s `PackageReference`s to the four RID packages pin an explicit floor**
+   (`0.0.0-alpha.1.14` as of 2026-08-26), not `$(Version)` and not a floating version. `$(Version)`
+   doesn't work: MinVer only sets it via a build target that runs *after* restore, but restore needs a
    concrete version immediately (`$(Version)` is still unset/defaults to `1.0.0` at that point, which
-   fails restore with `NU1102`, tried it). A **floating** version (`0.0.0-alpha.1.*`, the original
-   choice here) doesn't work well either: it has no publishable meaning in a nuspec, so `dotnet pack`
-   collapses it to whatever concrete sibling version happened to resolve *at pack time* and bakes that
-   in as the minimum — every repack silently ratcheted that floor up to the latest sibling version, so
-   once an older intermediate sibling version got pruned from a downstream feed that only mirrors the
-   latest, consumers hit `NU1603` ("dependency version not found, nearest match used") or, worse, a
-   genuine hard restore failure if the baked floor ended up *higher* than what that feed actually had.
-   A plain non-floating version string is valid nuspec syntax as-is and NuGet already treats it as a
-   minimum-inclusive bound (`>= X`) — pinning to the fixed `0.0.0-alpha.1` floor (lower than any real
-   `alpha.1.<height>` build by prerelease-identifier comparison) means Desktop is satisfied by *any*
-   sibling package ever built in this family, without the floor moving on every repack. Trade-off:
-   `NU1603` now fires on every restore/pack (a literal `0.0.0-alpha.1` build will never exist), but
-   that's a guaranteed *benign* warning, not the possible *hard failure* the old approach risked. Update
-   this floor (and `MinVerDefaultPreReleaseIdentifiers`, point 7) together if that identifier changes.
+   fails restore with `NU1102`, tried it). This floor has been through three iterations, keep the
+   reasoning in mind before changing it again:
+   1. **Floating** (`0.0.0-alpha.1.*`, the original choice): has no publishable meaning in a nuspec, so
+      `dotnet pack` collapsed it to whatever concrete sibling version resolved *at pack time* and baked
+      that in as the minimum — every repack silently ratcheted the floor up, risking a hard restore
+      failure once an older sibling version got pruned from a downstream feed the floor now exceeded.
+   2. **Abstract, height-less** (`0.0.0-alpha.1`, no ratcheting): never moves, but a literal
+      `0.0.0-alpha.1` build will never exist, so `NU1603` ("dependency version not found, nearest match
+      used") fired on *every single restore*, everywhere, permanently — benign but noisy enough in
+      practice (reported from a real downstream consumer, AxoSync) to be worth avoiding.
+   3. **Pinned to the current real height** (`0.0.0-alpha.1.14`, settled on): the one height all four
+      sibling packages actually share in the local feed. Still a minimum-inclusive bound (plain,
+      non-bracketed version strings mean `>= X` in nuspec dependency syntax, not an exact pin), so any
+      later height still satisfies it once repacked — but this also stops an older cached copy in
+      NuGet's global package cache (e.g. `1.12`) from silently satisfying the old height-less floor
+      instead of the feed's actual current version, which is what was actually causing the `NU1603`
+      noise (a stale local cache, not a feed content problem). Trade-off, accepted deliberately: this
+      floor needs bumping by hand (edit here, then repack) whenever the siblings move to a new height
+      that should become the new baseline — a manual step again, but only when actually intended, not
+      silently on every incidental repack like option 1. Update this floor (and
+      `MinVerDefaultPreReleaseIdentifiers`, point 7) together if that identifier changes.
 
 ## Status
 

@@ -15,29 +15,39 @@
          *after* restore, but restore needs a concrete version right now to resolve these
          PackageReferences (chicken and egg).
 
-         This used to be a floating version ("0.0.0-alpha.1.*"), which resolves at RESTORE
-         time to the highest matching version in the feed, but a floating spec has no
-         publishable meaning in a nuspec, so `dotnet pack` is forced to collapse it down to
-         whatever concrete version happened to resolve *at pack time* and bakes that in as
-         the minimum. Every time Desktop got repacked, that minimum silently ratcheted up to
-         the latest sibling version, so as soon as an older intermediate version of a
-         sibling package (e.g. 1.12) got pruned from a downstream feed that only mirrors the
-         latest, consumers hit NU1603 ("dependency version not found, nearest match used":
-         benign, but noisy, and a symptom of a floor that shouldn't have moved).
+         This has been through two earlier iterations:
+         1. A floating version ("0.0.0-alpha.1.*"): has no publishable meaning in a
+            nuspec, so `dotnet pack` collapsed it to whatever concrete sibling version
+            resolved *at pack time* and baked THAT in as the minimum, ratcheting up on every
+            repack. Once an older sibling version got pruned from a downstream feed, this
+            risked a genuine hard restore failure (floor higher than what that feed had).
+         2. An abstract, height-less floor ("0.0.0-alpha.1"): never ratchets, but a
+            literal "0.0.0-alpha.1" build will never exist, so NU1603 ("dependency version
+            not found, nearest match used") fired on *every single restore*, everywhere,
+            permanently. Benign, but noisy enough in practice (reported from a real
+            downstream consumer, AxoSync) that it's worth avoiding for a floor we can
+            actually pin correctly.
 
-         A plain (non-floating) version string is valid nuspec syntax as-is and NuGet
-         already treats it as a minimum-inclusive bound ">= X", so pinning to the fixed,
-         low "0.0.0-alpha.1" floor here means Desktop is satisfied by ANY sibling package
-         ever built in this alpha.1 family, regardless of its specific height, without the
-         floor moving on every repack. Restore still picks up whatever's actually present in
-         the configured feed (currently the latest of each), so local dev/testing behaves
-         the same as before; only the *baked minimum* changes. Update this (and
+         Settled on pinning to "0.0.0-alpha.1.14" specifically: the one height at which
+         all four sibling packages have actually been built and sit in the local feed
+         together. As a plain (non-floating, non-bracketed) version string this is still a
+         minimum-inclusive bound (">= 0.0.0-alpha.1.14"), not an exact pin, so any later
+         height still satisfies it once repacked; but a NuGet global-package-cache with an
+         older cached copy (e.g. 1.12) no longer silently satisfies it either, forcing
+         restore to reach for the real current version instead (this is what was actually
+         happening: AxoSync's cache had stale 1.12/1.2 copies that satisfied the old
+         "anything >= 0.0.0-alpha.1" floor, not a feed content problem).
+
+         Trade-off, accepted deliberately: this floor needs bumping by hand (edit here, then
+         repack) whenever the sibling packages move to a new height that should become the
+         new baseline: back to needing a manual step, but only when actually intended,
+         not silently on every incidental repack. Update this (and
          MinVerDefaultPreReleaseIdentifiers in Directory.Build.props) together if that
          identifier ever changes (e.g. once real release tags start). -->
-    <PackageReference Include="TINS.Native.win-x64" Version="0.0.0-alpha.1" />
-    <PackageReference Include="TINS.Native.linux-x64" Version="0.0.0-alpha.1" />
-    <PackageReference Include="TINS.Native.osx-x64" Version="0.0.0-alpha.1" />
-    <PackageReference Include="TINS.Native.osx-arm64" Version="0.0.0-alpha.1" />
+    <PackageReference Include="TINS.Native.win-x64" Version="0.0.0-alpha.1.14" />
+    <PackageReference Include="TINS.Native.linux-x64" Version="0.0.0-alpha.1.14" />
+    <PackageReference Include="TINS.Native.osx-x64" Version="0.0.0-alpha.1.14" />
+    <PackageReference Include="TINS.Native.osx-arm64" Version="0.0.0-alpha.1.14" />
   </ItemGroup>
 
 </Project>
