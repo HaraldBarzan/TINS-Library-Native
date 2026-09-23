@@ -3,7 +3,7 @@
 .SYNOPSIS
     Copies the shared libraries vcpkg just built for one triplet into a flat
     runtimes/<rid>/native/ staging folder, ready to be packed by the matching
-    TINS.Native.<rid>.csproj.
+    .csproj.
 
 .PARAMETER Triplet
     The vcpkg triplet that was just installed, e.g. "x64-windows", "x64-linux-dynamic".
@@ -11,13 +11,23 @@
 .PARAMETER Rid
     The .NET RID this triplet corresponds to, e.g. "win-x64", "linux-x64".
 
+.PARAMETER Component
+    Which license-separated package family to stage for -- "Core" (OpenBLAS, and
+    eventually the PocketFFT shim once it lands; BSD-3-Clause, packed as
+    TINS.Native.<rid>) or "Fftw" (FFTW only; GPL-2.0-or-later, packed as
+    TINS.Native.FFTW.<rid>). These are staged into separate folders and packed as
+    separate NuGet packages specifically so a consumer never gets GPL-licensed
+    content just from adding the default package -- see CLAUDE.md's decision on the
+    FFTW/core license split.
+
 .PARAMETER VcpkgInstalledRoot
     Path to vcpkg's "installed" output (the "vcpkg_installed" directory produced by
     manifest-mode installs), default assumes it sits next to this script's repo root.
 
 .PARAMETER OutputRoot
     Where to stage the flattened runtimes/<rid>/native/ folder. Defaults to
-    "<repo root>/artifacts/runtimes/<rid>/native".
+    "<repo root>/artifacts/runtimes/<rid>/native" for -Component Core, or
+    "<repo root>/artifacts/fftw-runtimes/<rid>/native" for -Component Fftw.
 
 .NOTES
     fftw3's vcpkg port builds three precision variants (fftw3, fftw3f, fftw3l) in one
@@ -49,11 +59,17 @@
 param(
     [Parameter(Mandatory)] [string] $Triplet,
     [Parameter(Mandatory)] [string] $Rid,
+    [ValidateSet("Core", "Fftw")] [string] $Component = "Core",
     [string] $VcpkgInstalledRoot = (Join-Path (Join-Path $PSScriptRoot "..") "vcpkg_installed"),
-    [string] $OutputRoot = (Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "artifacts") "runtimes") (Join-Path $Rid "native"))
+    [string] $OutputRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrEmpty($OutputRoot)) {
+    $stagingFolderName = if ($Component -eq "Fftw") { "fftw-runtimes" } else { "runtimes" }
+    $OutputRoot = Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "artifacts") (Join-Path $stagingFolderName (Join-Path $Rid "native"))
+}
 
 $installedDir = Join-Path $VcpkgInstalledRoot $Triplet
 if (-not (Test-Path $installedDir)) {
@@ -69,31 +85,39 @@ if (-not $searchDirs) {
     throw "Neither bin/ nor lib/ found under $installedDir"
 }
 
-# Real vcpkg source name -> name NativeImportResolver actually probes for, per platform.
-$renameMap = switch -Regex ($Rid) {
+# Real vcpkg source name -> name NativeImportResolver actually probes for, per platform,
+# split by which license-separated package the file belongs in.
+$renameMaps = switch -Regex ($Rid) {
     "^win-" {
         @{
-            "fftw3.dll"    = "libfftw3-3.dll"
-            "fftw3f.dll"   = "libfftw3f-3.dll"
-            "openblas.dll" = "libopenblas.dll"
+            Core = @{ "openblas.dll" = "libopenblas.dll" }
+            Fftw = @{
+                "fftw3.dll"  = "libfftw3-3.dll"
+                "fftw3f.dll" = "libfftw3f-3.dll"
+            }
         }
     }
     "^osx-" {
         @{
-            "libfftw3.dylib"    = "libfftw3-3.dylib"
-            "libfftw3f.dylib"   = "libfftw3f-3.dylib"
-            "libopenblas.dylib" = "libopenblas.dylib"
+            Core = @{ "libopenblas.dylib" = "libopenblas.dylib" }
+            Fftw = @{
+                "libfftw3.dylib"  = "libfftw3-3.dylib"
+                "libfftw3f.dylib" = "libfftw3f-3.dylib"
+            }
         }
     }
     default {
         # linux-*
         @{
-            "libfftw3.so"    = "libfftw3-3.so"
-            "libfftw3f.so"   = "libfftw3f-3.so"
-            "libopenblas.so" = "libopenblas.so"
+            Core = @{ "libopenblas.so" = "libopenblas.so" }
+            Fftw = @{
+                "libfftw3.so"  = "libfftw3-3.so"
+                "libfftw3f.so" = "libfftw3f-3.so"
+            }
         }
     }
 }
+$renameMap = $renameMaps[$Component]
 
 $copied = @()
 foreach ($dir in $searchDirs) {
@@ -108,7 +132,7 @@ foreach ($dir in $searchDirs) {
 }
 
 if (-not $copied) {
-    throw "No FFTW/OpenBLAS shared libraries matched under $($searchDirs -join ', ') for RID '$Rid'. " +
+    throw "No shared libraries matched under $($searchDirs -join ', ') for RID '$Rid' component '$Component'. " +
           "Inspect that directory's actual contents and fix the rename map in this script."
 }
 

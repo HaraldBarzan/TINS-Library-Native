@@ -6,8 +6,8 @@
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
     <PackageId>TINS.Native.osx-x64</PackageId>
-    <Description>Native runtime assets (FFTW, OpenBLAS) for TINS.Core on osx-x64.</Description>
-    <PackageTags>Neuroscience, Native, FFTW, OpenBLAS, osx-x64</PackageTags>
+    <Description>Native runtime assets (OpenBLAS) for TINS.Core on osx-x64, BSD-3-Clause throughout. For FFTW (GPL-2.0-or-later), add TINS.Native.FFTW.osx-x64 separately -- see that package's description for why it's a separate opt-in reference instead of bundled here.</Description>
+    <PackageTags>Neuroscience, Native, OpenBLAS, osx-x64</PackageTags>
     <NativeStagingDir Condition="'$(NativeStagingDir)'==''">$(MSBuildThisFileDirectory)..\..\artifacts\runtimes\osx-x64\native</NativeStagingDir>
   </PropertyGroup>
 

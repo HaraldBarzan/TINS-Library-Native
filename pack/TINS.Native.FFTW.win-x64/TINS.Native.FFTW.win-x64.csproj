@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
+    <PackageId>TINS.Native.FFTW.win-x64</PackageId>
+    <!-- FFTW is GPL-2.0-or-later, a real, more restrictive license than the BSD-3-Clause
+         TINS.Native.win-x64 (OpenBLAS + PocketFFT) carries. Bundling it into that package
+         would silently make every consumer's app GPL-encumbered just for adding "the
+         native package". Splitting it into its own opt-in package puts the license
+         decision where it belongs: on the consumer, at the point they explicitly add
+         this reference. See CLAUDE.md's decision on the FFTW/core package split. -->
+    <PackageLicenseExpression>GPL-2.0-or-later</PackageLicenseExpression>
+    <Description>FFTW native runtime assets for TINS.Core on win-x64. GPL-2.0-or-later -- adding this package to your application means your application must also comply with the GPL for the parts that link against it. Only add this if you specifically need FFTW (e.g. via TINS.Core's FFTW&lt;T&gt;.Plan) and accept that obligation; otherwise TINS.Native.win-x64 alone (BSD-3-Clause, OpenBLAS + PocketFFT) covers TINS.Core's FFT needs without it.</Description>
+    <PackageTags>Neuroscience, Native, FFTW, GPL, win-x64</PackageTags>
+    <NativeStagingDir Condition="'$(NativeStagingDir)'==''">$(MSBuildThisFileDirectory)..\..\artifacts\fftw-runtimes\win-x64\native</NativeStagingDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(NativeStagingDir)\*" Pack="true"
+          PackagePath="runtimes/win-x64/native/%(Filename)%(Extension)" Visible="false" />
+  </ItemGroup>
+
+</Project>

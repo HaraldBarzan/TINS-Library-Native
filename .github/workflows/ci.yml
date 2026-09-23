@@ -80,10 +80,20 @@ jobs:
         run: |
           ${{ env.VCPKG_ROOT }}/vcpkg install --triplet ${{ matrix.triplet }} --x-install-root=${{ github.workspace }}/vcpkg_installed
 
-      - name: Stage native assets
+      # Staged (and later packed/smoke-tested) as two separate license-tracked package
+      # families -- see CLAUDE.md's decision on the FFTW/core split. Core is
+      # BSD-3-Clause (OpenBLAS today, PocketFFT once that shim lands); Fftw is
+      # GPL-2.0-or-later and strictly opt-in for a consumer.
+      - name: Stage native assets (core)
         shell: pwsh
         run: |
-          ./scripts/stage-native.ps1 -Triplet ${{ matrix.triplet }} -Rid ${{ matrix.rid }} `
+          ./scripts/stage-native.ps1 -Triplet ${{ matrix.triplet }} -Rid ${{ matrix.rid }} -Component Core `
+            -VcpkgInstalledRoot ${{ github.workspace }}/vcpkg_installed
+
+      - name: Stage native assets (fftw)
+        shell: pwsh
+        run: |
+          ./scripts/stage-native.ps1 -Triplet ${{ matrix.triplet }} -Rid ${{ matrix.rid }} -Component Fftw `
             -VcpkgInstalledRoot ${{ github.workspace }}/vcpkg_installed
 
       - name: Pack TINS.Native.${{ matrix.rid }}
@@ -92,7 +102,13 @@ jobs:
           dotnet pack pack/TINS.Native.${{ matrix.rid }}/TINS.Native.${{ matrix.rid }}.csproj `
             -c Release -o artifacts/nupkg
 
-      - name: Smoke test
+      - name: Pack TINS.Native.FFTW.${{ matrix.rid }}
+        shell: pwsh
+        run: |
+          dotnet pack pack/TINS.Native.FFTW.${{ matrix.rid }}/TINS.Native.FFTW.${{ matrix.rid }}.csproj `
+            -c Release -o artifacts/nupkg
+
+      - name: Smoke test (core)
         shell: pwsh
         run: |
           dotnet nuget add source "${{ github.workspace }}/artifacts/nupkg" --name local-native
@@ -114,10 +130,31 @@ jobs:
           # of the default set for this restore without needing --source at all -- this
           # matches the CLAUDE.md-documented gotcha with dotnet add package --source.
           dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }} --version $version
-          dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release
+          dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release -- core
+
+          # Isolated on purpose: prove the core package alone resolves OpenBLAS and does
+          # NOT depend on FFTW being present, before the FFTW package is added below.
+          dotnet remove smoke/Tins.Native.Smoke.csproj package TINS.Native.${{ matrix.rid }}
+
+      - name: Smoke test (fftw)
+        shell: pwsh
+        run: |
+          $nupkg = Get-ChildItem "artifacts/nupkg/TINS.Native.FFTW.${{ matrix.rid }}.*.nupkg" | Select-Object -First 1
+          $version = $nupkg.BaseName -replace "^TINS\.Native\.FFTW\.${{ matrix.rid }}\.", ""
+          Write-Host "Smoke-testing TINS.Native.FFTW.${{ matrix.rid }} version $version"
+
+          dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.FFTW.${{ matrix.rid }} --version $version
+          dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release -- fftw
+          dotnet remove smoke/Tins.Native.Smoke.csproj package TINS.Native.FFTW.${{ matrix.rid }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: TINS.Native.${{ matrix.rid }}
-          path: artifacts/nupkg/*.nupkg
+          path: artifacts/nupkg/TINS.Native.${{ matrix.rid }}.*.nupkg
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TINS.Native.FFTW.${{ matrix.rid }}
+          path: artifacts/nupkg/TINS.Native.FFTW.${{ matrix.rid }}.*.nupkg
           if-no-files-found: error

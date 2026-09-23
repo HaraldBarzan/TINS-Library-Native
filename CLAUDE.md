@@ -7,13 +7,20 @@ repository.
 
 `tins-lib-native` builds and packages the native (C/C++) dependencies behind
 [TINS-Library](https://github.com/HaraldBarzan/TINS-Library) (`TINS.Core`, at `c:\_code\tins-lib`
-locally) — FFTW and OpenBLAS. It exists as a separate repo because these libraries change far less
-often than TINS.Core itself, and the goal is one NuGet package per RID (`TINS.Native.win-x64`,
-`TINS.Native.linux-x64`, `TINS.Native.osx-x64`, `TINS.Native.osx-arm64`) that TINS.Core consumers add
-explicitly for whichever platform(s) they ship. A fifth package, `TINS.Native.Desktop`, is a
-meta-package with no native content of its own — it just depends on all four RID packages, for a
-consumer (e.g. a cross-platform test project) that wants every desktop RID at once instead of adding
-each one individually.
+locally) — FFTW, OpenBLAS, and (once implemented) PocketFFT. It exists as a separate repo because
+these libraries change far less often than TINS.Core itself.
+
+**Packages are split into two license-separated families**, not just one package per RID (see
+Decision 9 below for the full rationale):
+- `TINS.Native.<rid>` (`win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`) — **BSD-3-Clause.** OpenBLAS
+  today; the PocketFFT shim (`pocketfft-shim/`, not yet implemented) once it lands. This is the
+  default package a TINS.Core consumer adds for whichever platform(s) they ship. `TINS.Native.Desktop`
+  is a meta-package with no native content of its own — it depends on all four core RID packages, for
+  a consumer (e.g. a cross-platform test project) that wants every desktop RID at once.
+- `TINS.Native.FFTW.<rid>` — **GPL-2.0-or-later, strictly opt-in.** FFTW binaries only. A consumer
+  adds this *in addition to* the core package only if they specifically need FFTW and knowingly accept
+  the GPL obligation for their own application. No `Desktop`-style meta-package for this family yet —
+  see Decision 9.
 
 > **Current package readiness: `TINS.Native.win-x64`, `TINS.Native.linux-x64`, and
 > `TINS.Native.osx-arm64` are real and working — built, packed, and smoke-tested in CI with genuine
@@ -22,6 +29,13 @@ each one individually.
 > GitHub Actions quota. Any downstream project (e.g. `tins-lib`) documenting or consuming these
 > packages should reflect this: 3 of 4 RIDs ready, osx-x64 not yet.** See Status below for why and
 > what it would take to finish it.
+>
+> **The FFTW/core package split (Decision 9) exists only on the `new-license-pocketfft` branch as of
+> this writing — it has not been run through CI or pushed.** Until it lands on `main` and gets a real
+> green CI run (all the same per-platform gotchas that bit the original split could plausibly recur for
+> the now-separate FFTW pack/stage/smoke steps), treat every "confirmed in CI" claim elsewhere in this
+> file as describing the pre-split single-package shape, not the current working tree. Re-verify after
+> merge before trusting it.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis) — this repo originally vendored
@@ -39,12 +53,14 @@ work on the repo itself.
 These came out of an explicit design conversation and are settled. If you find yourself about to
 propose an alternative to one of these, stop and re-read this list instead:
 
-1. **One NuGet package per RID**, not one per native library. `TINS.Native.<rid>` contains only
-   `runtimes/<rid>/native/*` content, no managed assembly.
-2. **Build scope is FFTW + OpenBLAS only**, built from source per-platform via vcpkg (manifest mode,
-   `vcpkg.json`) — identical across all four RIDs. `libeigenexports`/`libdpss` are gone from the
-   picture entirely (see Project Overview above); do not reintroduce a `vendor/` directory or a
-   win-x64-only special case without a new, explicit reason.
+1. **One NuGet package per (RID, license family)**, not one per native library and not simply one per
+   RID either — revised by Decision 9 below from the original "one per RID" rule once a real licensing
+   reason (not a style preference) forced the split. `TINS.Native.<rid>` and `TINS.Native.FFTW.<rid>`
+   each contain only `runtimes/<rid>/native/*` content, no managed assembly.
+2. **Build scope is FFTW + OpenBLAS (+ PocketFFT, once `pocketfft-shim/` is implemented) only**, built
+   from source per-platform via vcpkg (manifest mode, `vcpkg.json`) — identical across all four RIDs.
+   `libeigenexports`/`libdpss` are gone from the picture entirely (see Project Overview above); do not
+   reintroduce a `vendor/` directory or a win-x64-only special case without a new, explicit reason.
 3. **Publishing is local-only for now.** CI builds, smoke-tests, and uploads nupkgs as workflow
    artifacts; nothing is pushed to nuget.org or any other feed. Don't add a publish step without
    being asked.
@@ -97,6 +113,40 @@ propose an alternative to one of these, stop and re-read this list instead:
       that should become the new baseline — a manual step again, but only when actually intended, not
       silently on every incidental repack like option 1. Update this floor (and
       `MinVerDefaultPreReleaseIdentifiers`, point 7) together if that identifier changes.
+9. **FFTW lives in its own opt-in package family (`TINS.Native.FFTW.<rid>`), separate from the core
+   `TINS.Native.<rid>` package (OpenBLAS + PocketFFT).** This is a licensing decision, not a
+   packaging-style one — revisit only if the underlying license facts change:
+   - FFTW is GPL-2.0-or-later. OpenBLAS and PocketFFT (`pocketfft-shim/`, BSD-3-Clause upstream) are
+     both BSD-3-Clause. The original design (one bundled package per RID, `Directory.Build.props`
+     declaring a blanket `MIT` that didn't even match either license) would have meant every consumer's
+     application inherited GPL obligations just from adding "the native package" — a real problem once
+     this ships on nuget.org, not a hypothetical one.
+   - `Directory.Build.props`'s default `PackageLicenseExpression` is now `BSD-3-Clause` (matches the
+     core packages); the four `pack/TINS.Native.FFTW.<rid>/*.csproj` override it to
+     `GPL-2.0-or-later` individually. Don't move the default back to a blanket value that covers both
+     families again.
+   - **Both libraries are still built from one `vcpkg install` per RID** (`vcpkg.json` keeps `fftw3`
+     and `openblas` as siblings) — the split happens at staging/packing time, not in what vcpkg builds.
+     `scripts/stage-native.ps1` takes a `-Component Core|Fftw` parameter and stages into two separate
+     output roots (`artifacts/runtimes/<rid>/native` vs. `artifacts/fftw-runtimes/<rid>/native`);
+     `.github/workflows/ci.yml` runs both staging invocations, both pack steps, and two *isolated*
+     smoke-test passes per RID leg (add core package → run `smoke -- core` → remove it; add FFTW
+     package → run `smoke -- fftw` → remove it) specifically to prove the core package alone never
+     drags in FFTW.
+   - **No `TINS.Native.FFTW.Desktop` meta-package yet**, unlike the core family's `Desktop` package.
+     A Desktop-style meta-package needs a pinned concrete dependency floor (see Decision 8), and there
+     is no real built FFTW-package height to pin to until this split has gone through CI at least once
+     — add it once that first height exists, not with a guessed placeholder.
+   - **On the `tins-lib` side (separate, later session, not started):** `FFTW<T>` needs to become a
+     truly optional native provider (`NativeLibrary.TryLoad`, silently unavailable if
+     `TINS.Native.FFTW.<rid>` isn't referenced) rather than a hard dependency, and PocketFFT — managed
+     first, then native once `pocketfft-shim/` is implemented — becomes the default FFT backend. Until
+     that lands, `tins-lib`'s existing FFTW-based code still needs `TINS.Native.FFTW.<rid>` added
+     explicitly alongside the core package to keep working.
+   - **License text bundling remains an open gap for all three libraries** (FFTW, OpenBLAS, PocketFFT)
+     — none of the nupkgs currently pack the actual upstream license text, only the
+     `PackageLicenseExpression` metadata. Worth fixing for all three at once when the PocketFFT shim
+     build wiring goes in, per `pocketfft-shim/README.md`'s own note on this.
 
 ## Status
 
@@ -297,15 +347,20 @@ dotnet pack pack/TINS.Native.win-x64/TINS.Native.win-x64.csproj -c Release -o ar
 # Inspect the resulting package layout
 unzip -l artifacts/nupkg/TINS.Native.win-x64.*.nupkg
 
-# End-to-end local smoke test (mirrors what CI's "Smoke test" step does)
+# End-to-end local smoke test (mirrors what CI's "Smoke test (core)" step does -- the FFTW
+# package smoke-tests the same way, just with TINS.Native.FFTW.win-x64 and "-- fftw")
 dotnet nuget add source "C:\_code\tins-lib-native\artifacts\nupkg" --name local-native
 dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.win-x64 --version <version-from-nupkg-filename>
-dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release
+dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release -- core
 # Clean up afterward -- both of these are test-only, not meant to be committed or left registered:
 dotnet nuget remove source local-native
 # (then revert the PackageReference dotnet add package just added to smoke/Tins.Native.Smoke.csproj --
 #  CI adds/removes it per-RID dynamically; the committed file should have an empty ItemGroup there)
 ```
+
+Since Decision 9, `scripts/stage-native.ps1` needs `-Component Core` or `-Component Fftw` before
+packing either family locally (`Core` is the default, so a bare invocation still stages OpenBLAS as
+before -- only staging FFTW needs the explicit flag now).
 
 **Don't pass `--source` to `dotnet add package` at all once the feed is registered above.** Two
 distinct, confirmed-in-practice failure modes come from this one flag: passing a *path* restricts the
@@ -320,12 +375,14 @@ is already part of the default source set for any subsequent restore in that sco
 
 | File | Purpose |
 |---|---|
-| `vcpkg.json` / `vcpkg-configuration.json` | vcpkg manifest — FFTW + OpenBLAS dependencies, pinned baseline, overlay-ports registration |
+| `vcpkg.json` / `vcpkg-configuration.json` | vcpkg manifest — FFTW + OpenBLAS dependencies, pinned baseline, overlay-ports registration. Both libraries still built together; the license split happens downstream (see Decision 9) |
 | `vcpkg-overlays/openblas/` | Overlay port: LAPACK enabled (`BUILD_WITHOUT_LAPACK=OFF`), `CMAKE_POLICY_VERSION_MINIMUM=3.5`, `NO_AVX*` scoped to Linux only — see dedicated section above |
 | `vcpkg-overlays/fftw3/` | Overlay port: `CMAKE_POLICY_VERSION_MINIMUM=3.5` only (fftw3 itself needs no LAPACK/AVX changes) — pulled fresh from the same vcpkg commit CI pins, not the stale local one |
 | `.gitattributes` | Forces `eol=lf` repo-wide — Windows checking out the overlay `.patch` files as CRLF corrupted them (CI debugging log item 10) |
-| `scripts/stage-native.ps1` | Flattens vcpkg's per-triplet build output into `runtimes/<rid>/native/` for packing — unified rename-map for all platforms, confirmed against real builds on win-x64/linux-x64/osx-arm64 |
-| `pack/TINS.Native.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID |
-| `pack/TINS.Native.Desktop/*.csproj` | Meta-package depending on all four RID packages, no native content of its own |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage → pack → smoke test → upload artifact |
-| `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist |
+| `scripts/stage-native.ps1` | Flattens vcpkg's per-triplet build output into `runtimes/<rid>/native/` for packing, split by `-Component Core\|Fftw` into two separate staging roots (Decision 9) — unified rename-map per component/platform, confirmed against real builds on win-x64/linux-x64/osx-arm64 pre-split |
+| `pack/TINS.Native.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — OpenBLAS (+ PocketFFT once implemented), BSD-3-Clause |
+| `pack/TINS.Native.FFTW.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — FFTW only, GPL-2.0-or-later, opt-in (Decision 9) |
+| `pack/TINS.Native.Desktop/*.csproj` | Meta-package depending on all four core RID packages, no native content of its own. No FFTW equivalent yet (Decision 9) |
+| `pocketfft-shim/` | Draft C ABI proposal (`include/tins_pocketfft.h`, `README.md`) for a thin shim around header-only PocketFFT — not yet implemented or wired into the build |
+| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw) — not yet run since the Decision 9 split landed |
+| `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present |

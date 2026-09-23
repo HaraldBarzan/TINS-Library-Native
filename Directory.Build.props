@@ -13,7 +13,12 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <!-- Default for the core RID/Desktop packages (OpenBLAS + PocketFFT, both BSD-3-Clause).
+         The FFTW opt-in packages (pack/TINS.Native.FFTW.*) override this to GPL-2.0-or-later:
+         FFTW itself is GPL-2.0-or-later, so a package containing only FFTW binaries must declare
+         that, not this repo's own (more permissive) default. See CLAUDE.md decision on the
+         FFTW/core package split for why these can no longer share one blanket license. -->
+    <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/HaraldBarzan/tins-lib-native</PackageProjectUrl>
     <RepositoryUrl>https://github.com/HaraldBarzan/tins-lib-native</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
