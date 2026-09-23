@@ -88,6 +88,27 @@
 
 #include <stddef.h> /* size_t */
 
+/* Unlike a Unix shared object (where a non-static extern "C" symbol is exported by default), an
+ * MSVC-built DLL exports NOTHING unless explicitly told to -- extern "C" alone controls name
+ * mangling/linkage, not visibility. Confirmed the hard way: a first build of this shim linked and
+ * loaded fine but `dumpbin /exports` showed an empty table, so every declaration below needs
+ * TINS_POCKETFFT_API. tins_pocketfft.cpp defines TINS_POCKETFFT_BUILDING before including this
+ * header so the library's own translation unit exports rather than imports; nothing else needs to
+ * define it (a P/Invoke consumer never #includes this header at all, but a hypothetical native C++
+ * consumer linking against the shim would want the dllimport side, which is why this isn't simply
+ * hardcoded to dllexport). Non-Windows needs no equivalent -- default ELF/Mach-O visibility already
+ * exports extern "C" symbols, matching how FFTW/OpenBLAS's own upstream builds behave with no
+ * special handling. */
+#if defined(_WIN32) || defined(__CYGWIN__)
+	#ifdef TINS_POCKETFFT_BUILDING
+		#define TINS_POCKETFFT_API __declspec(dllexport)
+	#else
+		#define TINS_POCKETFFT_API __declspec(dllimport)
+	#endif
+#else
+	#define TINS_POCKETFFT_API
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -95,7 +116,7 @@ extern "C" {
 /* Returns the shim's own version string (e.g. "1.0.0"), for TINS.Core to distinguish "library not
  * found" from "library found but predates a function this version of TINS.Core needs" without a
  * symbol-existence probe per function. Does not reflect the vendored pocketfft version. */
-const char* tins_pocketfft_version(void);
+TINS_POCKETFFT_API const char* tins_pocketfft_version(void);
 
 typedef enum
 {
@@ -130,23 +151,23 @@ typedef struct tins_pocketfft_plan_c2r_f64 tins_pocketfft_plan_c2r_f64;
  * `input_stride` and writing strided by `output_stride` (1 = contiguous; see the stride bullet
  * above). On success, writes the new plan to *out_plan and returns TINS_POCKETFFT_OK; on failure,
  * *out_plan is set to NULL. */
-tins_pocketfft_status tins_pocketfft_c2c_f32_create(size_t size, tins_pocketfft_sign sign,
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2c_f32_create(size_t size, tins_pocketfft_sign sign,
 	size_t input_stride, size_t output_stride, tins_pocketfft_plan_c2c_f32** out_plan);
 
 /* Destroy a plan created by tins_pocketfft_c2c_f32_create. Passing NULL is a no-op. */
-void tins_pocketfft_c2c_f32_destroy(tins_pocketfft_plan_c2c_f32* plan);
+TINS_POCKETFFT_API void tins_pocketfft_c2c_f32_destroy(tins_pocketfft_plan_c2c_f32* plan);
 
 /* Execute the transform: reads `size` complex samples (interleaved re/im pairs, `input_stride`
  * elements apart) from `input` and writes `size` complex samples the same way to `output`, per the
  * strides the plan was created with. input and output may be the exact same pointer (in-place). */
-tins_pocketfft_status tins_pocketfft_c2c_f32_execute(tins_pocketfft_plan_c2c_f32* plan, const float* input, float* output);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2c_f32_execute(tins_pocketfft_plan_c2c_f32* plan, const float* input, float* output);
 
 /* ---- complex-to-complex, double precision ---- */
 
-tins_pocketfft_status tins_pocketfft_c2c_f64_create(size_t size, tins_pocketfft_sign sign,
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2c_f64_create(size_t size, tins_pocketfft_sign sign,
 	size_t input_stride, size_t output_stride, tins_pocketfft_plan_c2c_f64** out_plan);
-void tins_pocketfft_c2c_f64_destroy(tins_pocketfft_plan_c2c_f64* plan);
-tins_pocketfft_status tins_pocketfft_c2c_f64_execute(tins_pocketfft_plan_c2c_f64* plan, const double* input, double* output);
+TINS_POCKETFFT_API void tins_pocketfft_c2c_f64_destroy(tins_pocketfft_plan_c2c_f64* plan);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2c_f64_execute(tins_pocketfft_plan_c2c_f64* plan, const double* input, double* output);
 
 /* ---- real-to-complex, single precision ---- */
 /* No `sign` parameter: real-to-complex and its inverse (complex-to-real, c2r, below) are each their
@@ -157,18 +178,18 @@ tins_pocketfft_status tins_pocketfft_c2c_f64_execute(tins_pocketfft_plan_c2c_f64
 /* Create a plan for a length-`size` real-input FFT. The one-sided complex output has
  * (size / 2 + 1) elements -- 2*(size/2+1) floats, interleaved re/im -- matching TINS.Core's existing
  * FFTW-based R2C convention (IRealFft1D<T>.OutputSize). */
-tins_pocketfft_status tins_pocketfft_r2c_f32_create(size_t size, tins_pocketfft_plan_r2c_f32** out_plan);
-void tins_pocketfft_r2c_f32_destroy(tins_pocketfft_plan_r2c_f32* plan);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_r2c_f32_create(size_t size, tins_pocketfft_plan_r2c_f32** out_plan);
+TINS_POCKETFFT_API void tins_pocketfft_r2c_f32_destroy(tins_pocketfft_plan_r2c_f32* plan);
 
 /* Reads `size` real samples from `input` and writes (size/2 + 1) complex samples to `output`.
  * input and output must not overlap. */
-tins_pocketfft_status tins_pocketfft_r2c_f32_execute(tins_pocketfft_plan_r2c_f32* plan, const float* input, float* output);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_r2c_f32_execute(tins_pocketfft_plan_r2c_f32* plan, const float* input, float* output);
 
 /* ---- real-to-complex, double precision ---- */
 
-tins_pocketfft_status tins_pocketfft_r2c_f64_create(size_t size, tins_pocketfft_plan_r2c_f64** out_plan);
-void tins_pocketfft_r2c_f64_destroy(tins_pocketfft_plan_r2c_f64* plan);
-tins_pocketfft_status tins_pocketfft_r2c_f64_execute(tins_pocketfft_plan_r2c_f64* plan, const double* input, double* output);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_r2c_f64_create(size_t size, tins_pocketfft_plan_r2c_f64** out_plan);
+TINS_POCKETFFT_API void tins_pocketfft_r2c_f64_destroy(tins_pocketfft_plan_r2c_f64* plan);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_r2c_f64_execute(tins_pocketfft_plan_r2c_f64* plan, const double* input, double* output);
 
 /* ---- complex-to-real, single precision (the inverse of r2c) ---- */
 /* No native provider calls this yet -- included so this shim doesn't expose a narrower surface than
@@ -178,20 +199,20 @@ tins_pocketfft_status tins_pocketfft_r2c_f64_execute(tins_pocketfft_plan_r2c_f64
 
 /* Create a plan whose real output has `size` elements, reading the matching one-sided complex
  * spectrum ((size / 2 + 1) elements) as input -- the exact mirror of r2c's shapes. */
-tins_pocketfft_status tins_pocketfft_c2r_f32_create(size_t size, tins_pocketfft_plan_c2r_f32** out_plan);
-void tins_pocketfft_c2r_f32_destroy(tins_pocketfft_plan_c2r_f32* plan);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2r_f32_create(size_t size, tins_pocketfft_plan_c2r_f32** out_plan);
+TINS_POCKETFFT_API void tins_pocketfft_c2r_f32_destroy(tins_pocketfft_plan_c2r_f32* plan);
 
 /* Reads (size/2 + 1) complex samples from `input` and writes `size` real samples to `output`.
  * `input` is not modified (see the c2r design-rule bullet above -- this is an ABI-level guarantee,
  * not just a description of what the current implementation happens to do). input and output must
  * not overlap. */
-tins_pocketfft_status tins_pocketfft_c2r_f32_execute(tins_pocketfft_plan_c2r_f32* plan, const float* input, float* output);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2r_f32_execute(tins_pocketfft_plan_c2r_f32* plan, const float* input, float* output);
 
 /* ---- complex-to-real, double precision ---- */
 
-tins_pocketfft_status tins_pocketfft_c2r_f64_create(size_t size, tins_pocketfft_plan_c2r_f64** out_plan);
-void tins_pocketfft_c2r_f64_destroy(tins_pocketfft_plan_c2r_f64* plan);
-tins_pocketfft_status tins_pocketfft_c2r_f64_execute(tins_pocketfft_plan_c2r_f64* plan, const double* input, double* output);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2r_f64_create(size_t size, tins_pocketfft_plan_c2r_f64** out_plan);
+TINS_POCKETFFT_API void tins_pocketfft_c2r_f64_destroy(tins_pocketfft_plan_c2r_f64* plan);
+TINS_POCKETFFT_API tins_pocketfft_status tins_pocketfft_c2r_f64_execute(tins_pocketfft_plan_c2r_f64* plan, const double* input, double* output);
 
 #ifdef __cplusplus
 }

@@ -1,9 +1,10 @@
 {
   "name": "tins-native",
   "version-string": "0.1.0",
-  "description": "Native library builds (FFTW, OpenBLAS) backing the TINS.Native.<rid> (OpenBLAS, BSD-3-Clause) and TINS.Native.FFTW.<rid> (FFTW, GPL-2.0-or-later, opt-in) NuGet package families. Both libraries are still built from one manifest/vcpkg install per RID; the license split happens at staging/packing time, not here.",
+  "description": "Native library builds (FFTW, OpenBLAS, PocketFFT) backing the TINS.Native.<rid> (OpenBLAS + PocketFFT shim, BSD-3-Clause) and TINS.Native.FFTW.<rid> (FFTW, GPL-2.0-or-later, opt-in) NuGet package families. All three are resolved from one manifest/vcpkg install per RID; the license split happens at staging/packing time, not here. pocketfft itself is header-only -- vcpkg just vendors pocketfft_hdronly.h for pocketfft-shim/ to build against (see scripts/build-pocketfft-shim.ps1), it isn't staged/packed directly.",
   "dependencies": [
     "fftw3",
-    "openblas"
+    "openblas",
+    "pocketfft"
   ]
 }

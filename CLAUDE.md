@@ -13,10 +13,10 @@ these libraries change far less often than TINS.Core itself.
 **Packages are split into two license-separated families**, not just one package per RID (see
 Decision 9 below for the full rationale):
 - `TINS.Native.<rid>` (`win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`) — **BSD-3-Clause.** OpenBLAS
-  today; the PocketFFT shim (`pocketfft-shim/`, not yet implemented) once it lands. This is the
-  default package a TINS.Core consumer adds for whichever platform(s) they ship. `TINS.Native.Desktop`
-  is a meta-package with no native content of its own — it depends on all four core RID packages, for
-  a consumer (e.g. a cross-platform test project) that wants every desktop RID at once.
+  plus the PocketFFT shim (`pocketfft-shim/`, implemented — see Decision 10). This is the default
+  package a TINS.Core consumer adds for whichever platform(s) they ship. `TINS.Native.Desktop` is a
+  meta-package with no native content of its own — it depends on all four core RID packages, for a
+  consumer (e.g. a cross-platform test project) that wants every desktop RID at once.
 - `TINS.Native.FFTW.<rid>` — **GPL-2.0-or-later, strictly opt-in.** FFTW binaries only. A consumer
   adds this *in addition to* the core package only if they specifically need FFTW and knowingly accept
   the GPL obligation for their own application. No `Desktop`-style meta-package for this family yet —
@@ -148,6 +148,51 @@ propose an alternative to one of these, stop and re-read this list instead:
      — none of the nupkgs currently pack the actual upstream license text, only the
      `PackageLicenseExpression` metadata. Worth fixing for all three at once when the PocketFFT shim
      build wiring goes in, per `pocketfft-shim/README.md`'s own note on this.
+10. **The pocketfft shim (`pocketfft-shim/`) is a bespoke CMake project, not a vcpkg overlay port**
+    — the one build-architecture question the interface draft had left open. It's our own first-party
+    source (`src/tins_pocketfft.cpp` against `include/tins_pocketfft.h`), so none of the reasons that
+    forced FFTW/OpenBLAS into overlay ports (fighting a vendored `CMakeLists.txt` we don't control)
+    apply; a plain, modern `CMakeLists.txt` avoids all of that from the start. It only needs vcpkg for
+    `pocketfft_hdronly.h` itself (`pocketfft` added as an ordinary, unmodified vcpkg dependency in
+    `vcpkg.json` — confirmed self-consistent against the pinned baseline the same way the earlier
+    fftw3/openblas baseline bug was checked), consumed as a plain `-DPOCKETFFT_INCLUDE_DIR=<path>`
+    include path rather than through vcpkg's toolchain machinery. `scripts/build-pocketfft-shim.ps1`
+    configures/builds/installs it and copies the output straight into the same core staging folder
+    `stage-native.ps1 -Component Core` uses, so `TINS.Native.<rid>`'s existing pack step picks it up
+    with no separate pack project.
+    - **A real bug was caught and fixed before this ever reached CI: MSVC exports NOTHING from a DLL
+      by default.** Unlike a Unix shared object (where a non-static `extern "C"` symbol is exported
+      automatically), `extern "C"` on Windows only controls name mangling/calling convention, not
+      visibility — a first build linked and loaded fine but `dumpbin /exports` showed an empty table.
+      Fixed with a `TINS_POCKETFFT_API` macro (`__declspec(dllexport)`/`dllimport`, gated on a
+      `TINS_POCKETFFT_BUILDING` define set only by `tins_pocketfft.cpp` itself) applied to every
+      declaration in `tins_pocketfft.h`. Re-verified after the fix: all 19 expected symbols present
+      via `dumpbin /exports`. FFTW/OpenBLAS never hit this because their own upstream build systems
+      already handle it — this is the first time this repo has had to.
+    - **The r2c/c2r direction-flag mapping was derived from reading pocketfft's actual vendored
+      source, not guessed, then independently confirmed by a functional test harness** (a scratch
+      C++ program linked directly against the built DLL, not just a symbol-presence check): the exact
+      pinned-commit `pocketfft_hdronly.h` was fetched directly
+      (`https://raw.githubusercontent.com/mreineck/pocketfft/9efd4da52cf8d28d14531d14e43ad9d913807546/pocketfft_hdronly.h`,
+      matching `vcpkg/ports/pocketfft/portfile.cmake`'s pinned `REF`) and its `general_r2c`/
+      `general_c2r` bodies read directly to confirm `r2c(..., forward=true, ...)` and
+      `c2r(..., forward=false, ...)` are exact structural inverses (both use pocketfft's own
+      "native", unnegated half-complex packing) — not a copy-paste assumption from FFTW's convention.
+      Confirmed with a real round trip: constant-signal r2c gives DC bin == N with all other bins
+      ~0, and r2c→c2r round-trips to `N * original` (unnormalized, matching this shim's stated FFTW-
+      compatible convention). Also verified: in-place c2c forward→backward round trip, and a strided
+      c2c call that only touches its targeted matrix column (the exact `FourierTransform2D`-enabling
+      use case Decision 4 in `pocketfft-shim/README.md` depends on).
+    - **`POCKETFFT_NO_MULTITHREADING` is defined when compiling `tins_pocketfft.cpp`** — multi-
+      threading is explicitly out of scope (per the shim's own README), and this avoids needing a
+      `-pthread` link dependency on Linux for code that would never use it anyway.
+    - **Not yet run through real CI** — verified locally on win-x64 only (build, export-symbol
+      inspection, a standalone C++ functional-test harness, and a full .NET P/Invoke round trip
+      through the actual smoke-test `Resolver`). linux-x64/osx-arm64 use the same plain CMakeLists.txt
+      and should behave identically, but that's an inference until CI actually runs it — same caveat
+      pattern as `osx-x64` elsewhere in this file. `.github/workflows/ci.yml` has a
+      "Build pocketfft shim (core)" step wired in, between core staging and packing, on the
+      `new-license-pocketfft` branch, not yet pushed for a real run at the time of this entry.
 
 ## Status
 
@@ -394,9 +439,10 @@ is already part of the default source set for any subsequent restore in that sco
 | `vcpkg-overlays/fftw3/` | Overlay port: `CMAKE_POLICY_VERSION_MINIMUM=3.5` only (fftw3 itself needs no LAPACK/AVX changes) — pulled fresh from the same vcpkg commit CI pins, not the stale local one |
 | `.gitattributes` | Forces `eol=lf` repo-wide — Windows checking out the overlay `.patch` files as CRLF corrupted them (CI debugging log item 10) |
 | `scripts/stage-native.ps1` | Flattens vcpkg's per-triplet build output into `runtimes/<rid>/native/` for packing, split by `-Component Core\|Fftw` into two separate staging roots (Decision 9) — unified rename-map per component/platform, confirmed against real builds on win-x64/linux-x64/osx-arm64 pre-split |
-| `pack/TINS.Native.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — OpenBLAS (+ PocketFFT once implemented), BSD-3-Clause |
+| `pack/TINS.Native.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — OpenBLAS + the pocketfft shim, BSD-3-Clause |
 | `pack/TINS.Native.FFTW.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — FFTW only, GPL-2.0-or-later, opt-in (Decision 9) |
 | `pack/TINS.Native.Desktop/*.csproj` | Meta-package depending on all four core RID packages, no native content of its own. No FFTW equivalent yet (Decision 9) |
-| `pocketfft-shim/` | Draft C ABI proposal (`include/tins_pocketfft.h`, `README.md`) for a thin shim around header-only PocketFFT — not yet implemented or wired into the build |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw) — confirmed green post-split (2026-09-23, run 35883211678) |
-| `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present |
+| `pocketfft-shim/CMakeLists.txt`, `include/tins_pocketfft.h`, `src/tins_pocketfft.cpp` | Implemented (Decision 10) — a bespoke CMake project (not a vcpkg overlay port) exposing header-only pocketfft as a P/Invoke-able C ABI. `TINS_POCKETFFT_API` export macro is load-bearing on Windows (MSVC exports nothing from a DLL without it) |
+| `scripts/build-pocketfft-shim.ps1` | Configures/builds/installs the pocketfft shim and copies its output into the same core staging folder `stage-native.ps1 -Component Core` uses |
+| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). The FFTW/core split itself confirmed green post-split (2026-09-23, run 35883211678); the pocketfft shim step is added on top, not yet run in CI (Decision 10) |
+| `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present; the core check now also round-trips a real r2c transform through the pocketfft shim via P/Invoke, not just a symbol-presence probe |

@@ -82,7 +82,7 @@ jobs:
 
       # Staged (and later packed/smoke-tested) as two separate license-tracked package
       # families -- see CLAUDE.md's decision on the FFTW/core split. Core is
-      # BSD-3-Clause (OpenBLAS today, PocketFFT once that shim lands); Fftw is
+      # BSD-3-Clause (OpenBLAS + the pocketfft-shim/ build below); Fftw is
       # GPL-2.0-or-later and strictly opt-in for a consumer.
       - name: Stage native assets (core)
         shell: pwsh
@@ -95,6 +95,17 @@ jobs:
         run: |
           ./scripts/stage-native.ps1 -Triplet ${{ matrix.triplet }} -Rid ${{ matrix.rid }} -Component Fftw `
             -VcpkgInstalledRoot ${{ github.workspace }}/vcpkg_installed
+
+      # Not a vcpkg overlay port -- pocketfft-shim/ is our own first-party source, built with a
+      # plain CMakeLists.txt that only needs vcpkg to have vendored pocketfft_hdronly.h (a real,
+      # unmodified vcpkg registry port, added as a manifest dependency above). Output goes straight
+      # into the same core staging folder as OpenBLAS, so one "Pack TINS.Native.<rid>" step below
+      # picks up both.
+      - name: Build pocketfft shim (core)
+        shell: pwsh
+        run: |
+          ./scripts/build-pocketfft-shim.ps1 -Rid ${{ matrix.rid }} `
+            -PocketfftIncludeDir ${{ github.workspace }}/vcpkg_installed/${{ matrix.triplet }}/include
 
       - name: Pack TINS.Native.${{ matrix.rid }}
         shell: pwsh

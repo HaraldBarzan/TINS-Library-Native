@@ -8,10 +8,11 @@ Packages are split into two license-separated families, not just by RID — see 
 families" below before assuming this is one native package per RID:
 
 - **`TINS.Native.<rid>`** (`win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`) — **BSD-3-Clause.**
-  OpenBLAS today; the PocketFFT shim (`pocketfft-shim/`, BSD-3-Clause) once it lands. This is the
-  default package every consumer adds alongside `TINS.Core`. A fifth package, `TINS.Native.Desktop`,
-  is a meta-package with no native content of its own that depends on all four RID packages, for a
-  consumer that wants every desktop RID at once (e.g. a cross-platform test project).
+  OpenBLAS plus the PocketFFT shim (`pocketfft-shim/`, BSD-3-Clause, implemented, not yet run
+  through real CI). This is the default package every consumer adds alongside `TINS.Core`. A fifth
+  package, `TINS.Native.Desktop`, is a meta-package with no native content of its own that depends on
+  all four RID packages, for a consumer that wants every desktop RID at once (e.g. a cross-platform
+  test project).
 - **`TINS.Native.FFTW.<rid>`** — **GPL-2.0-or-later, strictly opt-in.** FFTW binaries only. A
   consumer adds this *in addition to* the core package only if they specifically need FFTW (e.g.
   via `TINS.Core`'s `FFTW<T>.Plan`) and knowingly accepts the GPL obligation that comes with it for
@@ -33,7 +34,7 @@ pattern projects like FFmpeg use to ship GPL and LGPL builds as separate artifac
 | Library | win-x64 | linux-x64 | osx-x64 | osx-arm64 | Package | License |
 |---|---|---|---|---|---|---|
 | OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) | `TINS.Native.<rid>` | BSD-3-Clause |
-| PocketFFT | not yet implemented (`pocketfft-shim/`, draft) | — | — | — | `TINS.Native.<rid>` | BSD-3-Clause |
+| PocketFFT | implemented, verified locally (not yet in CI) | untested | untested | untested | `TINS.Native.<rid>` | BSD-3-Clause |
 | FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) | `TINS.Native.FFTW.<rid>` | GPL-2.0-or-later, opt-in |
 
 FFTW and OpenBLAS are built from source per-platform in CI via [vcpkg](https://vcpkg.io) (see
@@ -62,20 +63,25 @@ is no automated publish step yet — download the artifacts and drop them into a
 
 ## Repo layout
 
-- `vcpkg.json` / `vcpkg-configuration.json` — manifest-mode dependencies (`fftw3`, `openblas`) and a
-  pinned `builtin-baseline` for reproducible builds. Both libraries are still built together per RID;
-  the license split happens downstream of vcpkg, not here.
-- `pack/TINS.Native.<rid>/` — one minimal native-asset-only `.csproj` per RID (OpenBLAS + PocketFFT,
-  BSD-3-Clause).
+- `vcpkg.json` / `vcpkg-configuration.json` — manifest-mode dependencies (`fftw3`, `openblas`,
+  `pocketfft`) and a pinned `builtin-baseline` for reproducible builds. FFTW/OpenBLAS are still built
+  together per RID; the license split happens downstream of vcpkg, not here. `pocketfft` is an
+  ordinary, unmodified registry dependency, vendoring only the header the shim below builds against.
+- `pack/TINS.Native.<rid>/` — one minimal native-asset-only `.csproj` per RID (OpenBLAS + the
+  pocketfft shim, BSD-3-Clause).
 - `pack/TINS.Native.FFTW.<rid>/` — one minimal native-asset-only `.csproj` per RID (FFTW only,
   GPL-2.0-or-later, opt-in).
 - `pack/TINS.Native.Desktop/` — meta-package depending on all four core RID packages, no native
   content of its own. (No FFTW equivalent yet — see CLAUDE.md.)
-- `pocketfft-shim/` — draft C ABI proposal for a thin shim around header-only PocketFFT, not yet
-  implemented or wired into the build.
+- `pocketfft-shim/` — a bespoke CMake project (not a vcpkg overlay port) implementing a thin,
+  P/Invoke-able C ABI around header-only PocketFFT. Implemented and locally verified on win-x64
+  (export symbols, a standalone functional test harness, and a full .NET P/Invoke round trip); not
+  yet run through real CI.
 - `scripts/stage-native.ps1` — copies vcpkg's build output into a flat `runtimes/<rid>/native/`
   staging folder consumed by the pack step, split by `-Component Core|Fftw` into the two license
   families' separate staging roots.
+- `scripts/build-pocketfft-shim.ps1` — configures/builds/installs the pocketfft shim and copies its
+  output into the same core staging folder as OpenBLAS.
 - `smoke/` — a small console app with its own corrected native-library resolver (fixes a
   double-`lib`-prefix bug present in `TINS-Library`'s `NativeImportResolver.cs` as of this writing;
   that fix should be ported back there once this repo's non-Windows packages are proven). CI restores
