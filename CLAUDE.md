@@ -30,12 +30,13 @@ Decision 9 below for the full rationale):
 > packages should reflect this: 3 of 4 RIDs ready, osx-x64 not yet.** See Status below for why and
 > what it would take to finish it.
 >
-> **The FFTW/core package split (Decision 9) exists only on the `new-license-pocketfft` branch as of
-> this writing — it has not been run through CI or pushed.** Until it lands on `main` and gets a real
-> green CI run (all the same per-platform gotchas that bit the original split could plausibly recur for
-> the now-separate FFTW pack/stage/smoke steps), treat every "confirmed in CI" claim elsewhere in this
-> file as describing the pre-split single-package shape, not the current working tree. Re-verify after
-> merge before trusting it.
+> **The FFTW/core package split (Decision 9) is on the `new-license-pocketfft` branch, not yet merged
+> to `main`, but it IS confirmed green in real CI** (2026-09-23, run
+> [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678)):
+> win-x64, linux-x64, and osx-arm64 all staged, packed, and smoke-tested both families successfully,
+> with isolated smoke passes proving the core package never drags in FFTW. All 6 artifacts (3 core + 3
+> FFTW) uploaded. None of the original split's per-platform gotchas recurred for the newly-separated
+> FFTW pack/stage/smoke steps. Merge to `main` is still pending.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis) — this repo originally vendored
@@ -153,6 +154,12 @@ propose an alternative to one of these, stop and re-read this list instead:
 - **GitHub remote is live: `https://github.com/HaraldBarzan/TINS-Library-Native` (private repo).**
   Pushed 2026-08-26; CI has run for real repeatedly since. This supersedes every earlier "no remote
   yet" / "placeholder packages" note that used to be here.
+- **The FFTW/core license split (Decision 9) is CONFIRMED green in real CI** (2026-09-23, branch
+  `new-license-pocketfft`, run
+  [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678)):
+  win-x64, linux-x64, and osx-arm64 all staged/packed/smoke-tested both `TINS.Native.<rid>` and
+  `TINS.Native.FFTW.<rid>` successfully, with isolated smoke passes proving the core package never
+  drags in FFTW. All 6 artifacts (3 core + 3 FFTW) uploaded. Not yet merged to `main`.
 - **win-x64, linux-x64, and osx-arm64 are all CONFIRMED fully green in real CI** (2026-08-26): genuine
   `vcpkg install` from source (not stand-ins), staged, packed, and smoke-tested successfully, with real
   `TINS.Native.<rid>` nupkgs uploaded as workflow artifacts. This is proven end-to-end, not just
@@ -384,5 +391,5 @@ is already part of the default source set for any subsequent restore in that sco
 | `pack/TINS.Native.FFTW.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — FFTW only, GPL-2.0-or-later, opt-in (Decision 9) |
 | `pack/TINS.Native.Desktop/*.csproj` | Meta-package depending on all four core RID packages, no native content of its own. No FFTW equivalent yet (Decision 9) |
 | `pocketfft-shim/` | Draft C ABI proposal (`include/tins_pocketfft.h`, `README.md`) for a thin shim around header-only PocketFFT — not yet implemented or wired into the build |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw) — not yet run since the Decision 9 split landed |
+| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw) — confirmed green post-split (2026-09-23, run 35883211678) |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present |
