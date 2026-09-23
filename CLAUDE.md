@@ -30,13 +30,19 @@ Decision 9 below for the full rationale):
 > packages should reflect this: 3 of 4 RIDs ready, osx-x64 not yet.** See Status below for why and
 > what it would take to finish it.
 >
-> **The FFTW/core package split (Decision 9) is on the `new-license-pocketfft` branch, not yet merged
-> to `main`, but it IS confirmed green in real CI** (2026-09-23, run
-> [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678)):
+> **The FFTW/core package split (Decision 9) AND the pocketfft shim (Decision 10) are both on the
+> `new-license-pocketfft` branch, not yet merged to `main`, but both ARE confirmed green in real CI**
+> (2026-09-23, split: run
+> [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678); shim:
+> run [35891221998](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35891221998)):
 > win-x64, linux-x64, and osx-arm64 all staged, packed, and smoke-tested both families successfully,
-> with isolated smoke passes proving the core package never drags in FFTW. All 6 artifacts (3 core + 3
-> FFTW) uploaded. None of the original split's per-platform gotchas recurred for the newly-separated
-> FFTW pack/stage/smoke steps. Merge to `main` is still pending.
+> with isolated smoke passes proving the core package never drags in FFTW, and the pocketfft shim's
+> P/Invoke r2c round trip passing on all three. All 6 nupkg artifacts (3 core + 3 FFTW) uploaded. None
+> of the original split's per-platform gotchas recurred for the newly-separated FFTW pack/stage/smoke
+> steps. **What's still missing before this is a real FFTW replacement, not just infrastructure:** no
+> code on the `tins-lib` side actually uses the pocketfft shim yet (no native provider classes, no
+> `FftProviderRegistry<T>` registration, `FFTW<T>` still a hard dependency there) — see Decision 9's
+> `tins-lib`-side bullet. Merge to `main` is still pending on that work, per the user's own call.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis) — this repo originally vendored
@@ -134,10 +140,13 @@ propose an alternative to one of these, stop and re-read this list instead:
      smoke-test passes per RID leg (add core package → run `smoke -- core` → remove it; add FFTW
      package → run `smoke -- fftw` → remove it) specifically to prove the core package alone never
      drags in FFTW.
-   - **No `TINS.Native.FFTW.Desktop` meta-package yet**, unlike the core family's `Desktop` package.
-     A Desktop-style meta-package needs a pinned concrete dependency floor (see Decision 8), and there
-     is no real built FFTW-package height to pin to until this split has gone through CI at least once
-     — add it once that first height exists, not with a guessed placeholder.
+   - **`TINS.Native.FFTW.Desktop` now exists** (added 2026-09-23, once the split's first CI height —
+     `0.0.0-alpha.1.22` — existed to pin a floor to, per Decision 8's own reasoning). Unlike the core
+     `TINS.Native.Desktop`, it references only win-x64/linux-x64/osx-arm64 — `TINS.Native.FFTW.osx-x64`
+     has never been built, not even as a placeholder, so including it would break restore entirely
+     rather than degrade gracefully. `TINS.Native.Desktop`'s own floor was bumped to `1.22` for
+     win-x64/linux-x64/osx-arm64 at the same time; its osx-x64 entry deliberately stayed at `1.14`
+     (the old placeholder, never rebuilt at the new height — see that `.csproj`'s own comment).
    - **On the `tins-lib` side (separate, later session, not started):** `FFTW<T>` needs to become a
      truly optional native provider (`NativeLibrary.TryLoad`, silently unavailable if
      `TINS.Native.FFTW.<rid>` isn't referenced) rather than a hard dependency, and PocketFFT — managed
@@ -186,13 +195,14 @@ propose an alternative to one of these, stop and re-read this list instead:
     - **`POCKETFFT_NO_MULTITHREADING` is defined when compiling `tins_pocketfft.cpp`** — multi-
       threading is explicitly out of scope (per the shim's own README), and this avoids needing a
       `-pthread` link dependency on Linux for code that would never use it anyway.
-    - **Not yet run through real CI** — verified locally on win-x64 only (build, export-symbol
-      inspection, a standalone C++ functional-test harness, and a full .NET P/Invoke round trip
-      through the actual smoke-test `Resolver`). linux-x64/osx-arm64 use the same plain CMakeLists.txt
-      and should behave identically, but that's an inference until CI actually runs it — same caveat
-      pattern as `osx-x64` elsewhere in this file. `.github/workflows/ci.yml` has a
-      "Build pocketfft shim (core)" step wired in, between core staging and packing, on the
-      `new-license-pocketfft` branch, not yet pushed for a real run at the time of this entry.
+    - **CONFIRMED green in real CI on all three active platforms** (2026-09-23, branch
+      `new-license-pocketfft`, run
+      [35891221998](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35891221998)):
+      win-x64, linux-x64, and osx-arm64 all built the shim, staged it into the core package, and
+      passed the smoke test's P/Invoke r2c round trip. Not just an inference from win-x64 anymore.
+      A trivial follow-up run (35894950658) also fixed a stray `/*` inside a block comment in
+      `tins_pocketfft.h` (Clang `-Wcomment` on osx-arm64 — harmless, didn't fail the build, but
+      worth not leaving in) — clean on all three platforms with no annotations after that fix.
 
 ## Status
 
@@ -444,5 +454,5 @@ is already part of the default source set for any subsequent restore in that sco
 | `pack/TINS.Native.Desktop/*.csproj` | Meta-package depending on all four core RID packages, no native content of its own. No FFTW equivalent yet (Decision 9) |
 | `pocketfft-shim/CMakeLists.txt`, `include/tins_pocketfft.h`, `src/tins_pocketfft.cpp` | Implemented (Decision 10) — a bespoke CMake project (not a vcpkg overlay port) exposing header-only pocketfft as a P/Invoke-able C ABI. `TINS_POCKETFFT_API` export macro is load-bearing on Windows (MSVC exports nothing from a DLL without it) |
 | `scripts/build-pocketfft-shim.ps1` | Configures/builds/installs the pocketfft shim and copies its output into the same core staging folder `stage-native.ps1 -Component Core` uses |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). The FFTW/core split itself confirmed green post-split (2026-09-23, run 35883211678); the pocketfft shim step is added on top, not yet run in CI (Decision 10) |
+| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998) |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present; the core check now also round-trips a real r2c transform through the pocketfft shim via P/Invoke, not just a symbol-presence probe |
