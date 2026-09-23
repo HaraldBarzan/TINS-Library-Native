@@ -159,7 +159,14 @@ propose an alternative to one of these, stop and re-read this list instead:
   [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678)):
   win-x64, linux-x64, and osx-arm64 all staged/packed/smoke-tested both `TINS.Native.<rid>` and
   `TINS.Native.FFTW.<rid>` successfully, with isolated smoke passes proving the core package never
-  drags in FFTW. All 6 artifacts (3 core + 3 FFTW) uploaded. Not yet merged to `main`.
+  drags in FFTW. All 6 artifacts (3 core + 3 FFTW) uploaded.
+- **Merging `new-license-pocketfft` into `main` is explicitly deferred** (user's own call,
+  2026-09-23) **until the PocketFFT shim itself is implemented and tested**, not just the packaging
+  split. Rationale: merging now would put `main` in a state where the core `TINS.Native.<rid>`
+  package ships OpenBLAS only, with no native FFT capability at all until FFTW is added back in via
+  the opt-in GPL package — a real capability regression for any consumer pulling from `main` in the
+  meantime. Keep working on `pocketfft-shim/` on this branch (or push further split-adjacent fixes to
+  it) rather than merging early. Don't merge to `main` without being asked.
 - **win-x64, linux-x64, and osx-arm64 are all CONFIRMED fully green in real CI** (2026-08-26): genuine
   `vcpkg install` from source (not stand-ins), staged, packed, and smoke-tested successfully, with real
   `TINS.Native.<rid>` nupkgs uploaded as workflow artifacts. This is proven end-to-end, not just
