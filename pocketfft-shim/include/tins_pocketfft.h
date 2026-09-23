@@ -1,18 +1,19 @@
 /*
- * tins_pocketfft.h -- proposed C ABI for a thin shim around the header-only pocketfft (BSD-3-Clause)
- * C++ implementation, consumed by TINS.Core (tins-lib) via P/Invoke.
+ * tins_pocketfft.h -- C ABI for a thin shim around the header-only pocketfft (BSD-3-Clause) C++
+ * implementation, consumed by TINS.Core (tins-lib) via P/Invoke.
  *
- * STATUS: DRAFT / PROPOSAL. This header defines the interface tins-lib and tins-lib-native need to
- * agree on before the shim is implemented. Nothing in tins-lib calls into this yet, and no build
- * wiring (vcpkg overlay / stage-native.ps1 / pack/*.csproj) has been added for it yet -- that is
- * intentionally deferred until this shape is confirmed.
+ * STATUS: IMPLEMENTED. tins_pocketfft.cpp in this directory implements every function declared
+ * here, built via pocketfft-shim/CMakeLists.txt and wired into stage-native.ps1's core (BSD-3-Clause)
+ * staging output and .github/workflows/ci.yml. Nothing in tins-lib calls into this yet on the C#
+ * side -- that native-provider work is still pending, see pocketfft-shim/README.md.
  *
  * WHY A SHIM AT ALL: unlike FFTW (a C library with a stable extern "C" ABI) and OpenBLAS (Fortran-
  * calling-convention C exports), pocketfft_hdronly.h is a C++ template header with no exported
  * symbols of its own -- there is nothing to P/Invoke into directly. This header is what turns it
  * into something with a stable, versioned, P/Invoke-able surface. It is the first custom native
  * shim in this repo (FFTW/OpenBLAS are both consumed as unmodified upstream builds via vcpkg
- * overlay ports); the implementation lives in this same `pocketfft-shim/` directory once agreed.
+ * overlay ports); this one is a bespoke CMake project instead, since it's first-party source we
+ * own rather than a vendored build system to patch (see CMakeLists.txt's own comment on why).
  *
  * DESIGN RULES:
  *   - Every function is extern "C", cdecl, and MUST NOT let a C++ exception cross this boundary --
