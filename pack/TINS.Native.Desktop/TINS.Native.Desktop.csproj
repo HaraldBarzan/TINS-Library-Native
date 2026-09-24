@@ -6,7 +6,7 @@
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
     <PackageId>TINS.Native.Desktop</PackageId>
-    <Description>Meta-package bundling TINS.Native.win-x64, TINS.Native.linux-x64, TINS.Native.osx-x64, and TINS.Native.osx-arm64, so a multi-platform consumer (e.g. a cross-targeted test project) can pull in native OpenBLAS/PocketFFT assets for every desktop RID with a single reference instead of adding each RID package individually. A single-RID deployment should still reference just its own TINS.Native.&lt;rid&gt; package directly -- this carries no native content of its own. FFTW is not included here, per the FFTW/core license split (GPL-2.0-or-later vs. BSD-3-Clause) -- see TINS.Native.FFTW.Desktop for the equivalent opt-in bundle.</Description>
+    <Description>Meta-package bundling TINS.Native.win-x64, TINS.Native.linux-x64, and TINS.Native.osx-arm64, so a multi-platform consumer (e.g. a cross-targeted test project) can pull in native OpenBLAS/PocketFFT assets for every desktop RID with a single reference instead of adding each RID package individually. A single-RID deployment should still reference just its own TINS.Native.&lt;rid&gt; package directly -- this carries no native content of its own. osx-x64 is deliberately excluded, see the PackageReference comment below. FFTW is not included here, per the FFTW/core license split (GPL-2.0-or-later vs. BSD-3-Clause) -- see TINS.Native.FFTW.Desktop for the equivalent opt-in bundle.</Description>
     <PackageTags>Neuroscience, Native, OpenBLAS, PocketFFT, Desktop</PackageTags>
   </PropertyGroup>
 
@@ -47,15 +47,18 @@
 
          Bumped win-x64/linux-x64/osx-arm64 to "0.0.0-alpha.1.22" (2026-09-23, after the FFTW/core
          split + pocketfft shim landed and ran green in CI): the new height all three actually
-         built RIDs share. osx-x64 deliberately stays at "0.0.0-alpha.1.14": it's still the same
-         non-functional placeholder from before this repo had a real osx-x64 build (see CLAUDE.md's
-         Status section), was never rebuilt at height 22, and pinning it there would just be a floor
-         that happens to also be satisfied by a placeholder rather than reflecting anything real;
-         no benefit to forcing it in step with the others. Re-align it once osx-x64 gets a real (or
-         at least freshly-repacked) build of its own. -->
+         built RIDs share.
+
+         TINS.Native.osx-x64 was dropped entirely (2026-09-24, while building the real nuget.org
+         publish workflow; see NUGET-PUBLISH-CHECKLIST.md, local-only): it used to sit here pinned
+         to the old "0.0.0-alpha.1.14" placeholder height, but osx-x64 is now permanently EXCLUDED
+         (see CLAUDE.md's Status section), meaning no TINS.Native.osx-x64 package will ever actually
+         be published. A PackageReference to a package that doesn't exist on the target feed doesn't
+         just degrade for osx-x64 users; it fails restore for this ENTIRE meta-package, for every
+         consumer on every platform. Don't add it back unless osx-x64 gets a real (or at least
+         actually-published) build of its own. -->
     <PackageReference Include="TINS.Native.win-x64" Version="0.0.0-alpha.1.22" />
     <PackageReference Include="TINS.Native.linux-x64" Version="0.0.0-alpha.1.22" />
-    <PackageReference Include="TINS.Native.osx-x64" Version="0.0.0-alpha.1.14" />
     <PackageReference Include="TINS.Native.osx-arm64" Version="0.0.0-alpha.1.22" />
   </ItemGroup>
 

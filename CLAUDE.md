@@ -6,9 +6,9 @@ repository.
 ## Project Overview
 
 `tins-lib-native` builds and packages the native (C/C++) dependencies behind
-[TINS-Library](https://github.com/HaraldBarzan/TINS-Library) (`TINS.Core`, at `c:\_code\tins-lib`
-locally) — FFTW, OpenBLAS, and (once implemented) PocketFFT. It exists as a separate repo because
-these libraries change far less often than TINS.Core itself.
+[TINS-Library](https://github.com/HaraldBarzan/TINS-Library) (`TINS.Core`, a sibling repo cloned
+locally alongside this one) — FFTW, OpenBLAS, and (once implemented) PocketFFT. It exists as a
+separate repo because these libraries change far less often than TINS.Core itself.
 
 **Packages are split into two license-separated families**, not just one package per RID (see
 Decision 9 below for the full rationale):
@@ -77,9 +77,52 @@ propose an alternative to one of these, stop and re-read this list instead:
    from source per-platform via vcpkg (manifest mode, `vcpkg.json`) — identical across all four RIDs.
    `libeigenexports`/`libdpss` are gone from the picture entirely (see Project Overview above); do not
    reintroduce a `vendor/` directory or a win-x64-only special case without a new, explicit reason.
-3. **Publishing is local-only for now.** CI builds, smoke-tests, and uploads nupkgs as workflow
-   artifacts; nothing is pushed to nuget.org or any other feed. Don't add a publish step without
-   being asked.
+3. **A real nuget.org publish step now exists** (added 2026-09-24, user's own call, while working
+   through `NUGET-PUBLISH-CHECKLIST.md`) — supersedes the earlier "local-only, don't add a publish
+   step" rule that used to be here. CI still builds/smoke-tests/uploads-as-artifact on every push as
+   before; the new `publish` job in `.github/workflows/ci.yml` only runs for an actual `vX.Y.Z` tag
+   push (`if: startsWith(github.ref, 'refs/tags/v')`, gated on the whole matrix AND the Desktop pack
+   job succeeding first), and pushes every nupkg the matrix actually produces (3 active RIDs × 2
+   license families + 2 Desktop meta-packages = 8 — NOT 10; osx-x64 is excluded from the matrix
+   entirely, see Status, so no 4th RID pair ever exists to push) to nuget.org via
+   `dotnet nuget push --skip-duplicate`. Day-to-day commits/PRs never reach this job at all — only
+   pushing a real version tag does.
+   - **Uses nuget.org's Trusted Publishing (OIDC), not a long-lived API key** — revised
+     2026-09-24, same day this was built, once nuget.org's own UI steered the user toward it as
+     the now-recommended approach over classic API keys. No `NUGET_API_KEY` secret exists or is
+     needed at all: the job requests a GitHub-signed OIDC token (`permissions: id-token: write`
+     on the job — job-level `permissions:` replaces rather than adds to the default set, fine
+     here since this job never checks the repo out), exchanges it via the `NuGet/login@v1` action
+     for a short-lived (1 hour) nuget.org API key, and uses that key's action output
+     (`${{ steps.login.outputs.NUGET_API_KEY }}`) for the actual `dotnet nuget push`.
+   - **Both one-time manual setup steps are DONE (2026-09-24)**: a Trusted Publishing policy
+     ("TINS Library (native assets)", Active) exists on nuget.org — Package owner `harald.barzan`,
+     Repository Owner `HaraldBarzan`, Repository `TINS-Library-Native`, Workflow `ci.yml`, scoped
+     to the `TINS.Native.*` glob for "Push new packages and package versions" — and this repo's
+     `NUGET_USERNAME` Actions secret is set to that account's nuget.org profile username. Nothing
+     left to configure: the next `vX.Y.Z` tag actually pushed will publish for real.
+   - A new `pack-desktop` job was added alongside this (previously `TINS.Native.Desktop`/
+     `TINS.Native.FFTW.Desktop` were never packed in CI at all, only manually/locally). It restores
+     against the matrix job's just-built artifacts registered as an *additional* NuGet source (not
+     a replacement — restore still needs nuget.org for MinVer itself), the same additive-source
+     pattern the smoke-test steps already use. Runs on every push, not just tags, since it's cheap
+     and catches a broken Desktop restore immediately rather than only at release time.
+   - **Fixed a real, pre-existing correctness bug found while wiring this up**:
+     `TINS.Native.Desktop`'s `PackageReference` to `TINS.Native.osx-x64` was still pointing at the
+     old placeholder floor — but since osx-x64 is now permanently excluded (see Status below), no
+     `TINS.Native.osx-x64` package will ever actually be published. Left in place, that reference
+     would have made `TINS.Native.Desktop` fail to restore for *every* consumer on *every*
+     platform, not just osx-x64 users, the moment it was ever really published. Dropped the
+     reference entirely (see that csproj's own comment for detail) rather than pointing it at a
+     version that will never exist.
+   - **Release-cutting nuance, not yet relevant until a real tag exists**: `TINS.Native.Desktop`/
+     `TINS.Native.FFTW.Desktop`'s pinned floors (Decision 8) must be bumped to match the exact new
+     release version *before* pushing a real `vX.Y.Z` tag, once nuget.org actually has more than one
+     published version to choose from — otherwise NuGet's default lowest-version-satisfying-the-floor
+     resolution could hand a consumer an older, already-published sibling instead of the new
+     release's own. `pack-desktop`'s additive local source only fixes resolution for that job's own
+     pack step, not the floor baked into the published nuspec. Not an issue for the very first
+     release (nothing else exists yet to be resolved to), but don't forget it for the second one.
 4. **`tins-lib` itself is untouched by this repo's work so far**, aside from the SVD/DPSS-elimination
    changes noted above (those landed directly in `tins-lib`, unrelated to this repo's own packaging).
    `TINS.Core` still bundles its own win-x64 FFTW/OpenBLAS natives via
@@ -113,6 +156,13 @@ propose an alternative to one of these, stop and re-read this list instead:
    `MinVerDefaultPreReleaseIdentifiers` to `alpha.1`, so untagged builds pack as `0.0.0-alpha.1.<height>`
    instead of MinVer's un-configured `0.0.0-alpha.0.<height>`. Once real release tags (`vX.Y.Z`) start
    getting pushed, this identifier stops applying (it only governs the untagged/pre-first-tag case).
+   **Release versioning is tag-based, "classic style" plain `1.0.0`** (user's own call, 2026-09-24,
+   made while assessing nuget.org publish readiness — see `NUGET-PUBLISH-CHECKLIST.md`, local-only):
+   push a `vX.Y.Z` tag on the release commit and MinVer produces exactly that version for a build at
+   that commit, no other config needed — this already works today, nothing above needed to change to
+   support it. The rejected alternative was a height-based `1.0.H` scheme applied to every build (not
+   just tagged releases); MinVer can't do that at all, it'd need Nerdbank.GitVersioning or a
+   hand-rolled commit-count property instead. Don't reintroduce that idea without a new reason.
 8. **`TINS.Native.Desktop`'s `PackageReference`s to the four RID packages pin an explicit floor**
    (`0.0.0-alpha.1.14` as of 2026-08-26), not `$(Version)` and not a floating version. `$(Version)`
    doesn't work: MinVer only sets it via a build target that runs *after* restore, but restore needs a
@@ -230,9 +280,11 @@ propose an alternative to one of these, stop and re-read this list instead:
 
 ## Status
 
-- **GitHub remote is live: `https://github.com/HaraldBarzan/TINS-Library-Native` (private repo).**
-  Pushed 2026-08-26; CI has run for real repeatedly since. This supersedes every earlier "no remote
-  yet" / "placeholder packages" note that used to be here.
+- **GitHub remote is live: `https://github.com/HaraldBarzan/TINS-Library-Native`.** Pushed
+  2026-08-26; CI has run for real repeatedly since. **Made public 2026-09-24** (user's own call, part
+  of nuget.org publish readiness — see `NUGET-PUBLISH-CHECKLIST.md`), so `PackageProjectUrl`/
+  `RepositoryUrl` now resolve for external consumers instead of 404ing. This supersedes every earlier
+  "no remote yet" / "placeholder packages" / "private repo" note that used to be here.
 - **The FFTW/core license split (Decision 9) is CONFIRMED green in real CI** (2026-09-23, branch
   `new-license-pocketfft`, run
   [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678)):
@@ -398,7 +450,7 @@ not Bash — MSYS mangles a bare `/exports` flag into a path):
   variant of `0.3.29`.
 - **Rebuilt and reverified (2026-08-26):** win-x64 `openblas.dll` is now 10.46MB, 6,497 exports,
   confirmed present: `sgesvd_`, `LAPACKE_sgesvd`, plus `dgesvd_`/`cgesvd_`/`zgesvd_` (all precisions).
-  Repacked `TINS.Native.win-x64.0.0.0-alpha.1.2.nupkg` into `C:\nugetlocal` with the corrected binary,
+  Repacked `TINS.Native.win-x64.0.0.0-alpha.1.2.nupkg` into the local dev feed with the corrected binary,
   cleared the stale cached copy at `~/.nuget/packages/tins.native.win-x64/`, and reran the smoke test
   clean. Still smaller than `tins-lib`'s 51MB bundled binary — that remaining gap is `dynamic-arch`
   (multi-microarchitecture runtime dispatch), deliberately deferred (see below), not a LAPACK gap.
@@ -446,7 +498,7 @@ unzip -l artifacts/nupkg/TINS.Native.win-x64.*.nupkg
 
 # End-to-end local smoke test (mirrors what CI's "Smoke test (core)" step does -- the FFTW
 # package smoke-tests the same way, just with TINS.Native.FFTW.win-x64 and "-- fftw")
-dotnet nuget add source "C:\_code\tins-lib-native\artifacts\nupkg" --name local-native
+dotnet nuget add source "$(pwd)/artifacts/nupkg" --name local-native
 dotnet add smoke/Tins.Native.Smoke.csproj package TINS.Native.win-x64 --version <version-from-nupkg-filename>
 dotnet run --project smoke/Tins.Native.Smoke.csproj -c Release -- core
 # Clean up afterward -- both of these are test-only, not meant to be committed or left registered:
@@ -484,5 +536,5 @@ is already part of the default source set for any subsequent restore in that sco
 | `licenses/` | Vendored upstream license text for FFTW/OpenBLAS/pocketfft, packed into the matching nupkg(s) alongside `PackageLicenseExpression` — a real redistribution-compliance requirement (BSD/GPL both require it), not decoration. See `licenses/README.md` for exact provenance/pinned versions and the extensionless-`PackagePath` NuGet quirk this ran into |
 | `pocketfft-shim/CMakeLists.txt`, `include/tins_pocketfft.h`, `src/tins_pocketfft.cpp` | Implemented (Decision 10) — a bespoke CMake project (not a vcpkg overlay port) exposing header-only pocketfft as a P/Invoke-able C ABI. `TINS_POCKETFFT_API` export macro is load-bearing on Windows (MSVC exports nothing from a DLL without it) |
 | `scripts/build-pocketfft-shim.ps1` | Configures/builds/installs the pocketfft shim and copies its output into the same core staging folder `stage-native.ps1 -Component Core` uses |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out and excluded — see Status): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998) |
+| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out and excluded — see Status): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998). Plus two jobs added 2026-09-24: `pack-desktop` (packs the two Desktop meta-packages against the matrix's own just-built artifacts, every push) and `publish` (tag-gated `vX.Y.Z` only, pushes all 8 nupkgs the active 3-RID matrix produces to nuget.org via Trusted Publishing/OIDC — policy + the `NUGET_USERNAME` secret both already set up, see Decision 3) |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present; the core check now also round-trips a real r2c transform through the pocketfft shim via P/Invoke, not just a symbol-presence probe |

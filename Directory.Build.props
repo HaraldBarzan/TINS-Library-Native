@@ -23,13 +23,19 @@
     <RepositoryUrl>https://github.com/HaraldBarzan/tins-lib-native</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>package-icon.png</PackageIcon>
     <Authors>Harald Bârzan</Authors>
     <Company>Transylvanian Institute of Neuroscience</Company>
-    <PackageOutputPath Condition="'$(PackageOutputPath)'==''">C:\nugetlocal</PackageOutputPath>
+    <!-- Repo-relative, not a hardcoded personal path; matches the artifacts/nupkg convention
+         CI already uses (ci.yml's own -o artifacts/nupkg overrides this anyway). Point
+         PackageOutputPath at your own local feed via an environment/global override if you want
+         `dotnet pack` to drop straight into one, instead of changing this shared default. -->
+    <PackageOutputPath Condition="'$(PackageOutputPath)'==''">$(MSBuildThisFileDirectory)artifacts\nupkg</PackageOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)package-icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

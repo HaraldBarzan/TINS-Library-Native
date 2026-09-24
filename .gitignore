@@ -3,4 +3,5 @@ obj/
 artifacts/
 vcpkg_installed/
 .vs/
+.vscode/
 *.user

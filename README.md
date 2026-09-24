@@ -61,11 +61,33 @@ runner availability is no longer the blocker — confirmed available (2026-01-29
 Free-plan eligible) — but they're deliberately deferred for now (2026-09-24): not currently useful
 enough to prioritize, revisit if that changes.
 
+## Known limitations
+
+**OpenBLAS is built single-target, not `dynamic-arch`.** It's compiled once per RID, targeting
+whatever CPU instruction set the *build machine* (a GitHub Actions runner) supports — currently up
+to AVX2/AVX-512 on x64. That instruction set is baked directly into the binary with no runtime
+fallback. If your actual CPU doesn't support it, calling into OpenBLAS won't degrade gracefully or
+throw a normal .NET exception — it will crash the process with an illegal-instruction fault
+(`SIGILL`) the first time an unsupported instruction executes. This is unlikely to matter on
+mainstream desktop/laptop/cloud hardware from the last several years, but it's a real risk on older
+or unusual CPUs, and there's currently no way to detect it ahead of time other than actually running
+the affected code path.
+
+The portable fix is a `dynamic-arch` build (multiple kernel variants + runtime CPU detection), which
+this repo does not currently produce — for Windows specifically it isn't even an option, since
+vcpkg's `openblas` port doesn't offer the `dynamic-arch` feature for MSVC builds at all
+(`"supports": "!windows | mingw"`). If this affects you, please open an issue — it hasn't been
+prioritized yet since most users are expected to be on recent Windows or Apple Silicon hardware, but
+that assumption hasn't been validated against real-world usage.
+
 ## Publishing
 
-CI builds and smoke-tests every push/PR and uploads each RID's `.nupkg` as a workflow artifact. There
-is no automated publish step yet — download the artifacts and drop them into a local feed (e.g.
-`C:\nugetlocal`, matching `TINS-Library`'s own local dev workflow) by hand.
+CI builds and smoke-tests every push/PR and uploads each RID's `.nupkg` as a workflow artifact.
+Pushing a `vX.Y.Z` release tag additionally publishes every package to
+[nuget.org](https://www.nuget.org/packages?q=TINS.Native) via nuget.org's Trusted Publishing
+(OIDC) — no long-lived API key stored anywhere. For day-to-day local development, download an
+artifact (or pack one yourself, see `CLAUDE.md`) and drop it into whatever local NuGet feed
+folder you use.
 
 ## Repo layout
 

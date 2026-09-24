@@ -172,3 +172,113 @@ jobs:
           name: TINS.Native.FFTW.${{ matrix.rid }}
           path: artifacts/nupkg/TINS.Native.FFTW.${{ matrix.rid }}.*.nupkg
           if-no-files-found: error
+
+  # TINS.Native.Desktop / TINS.Native.FFTW.Desktop were never packed in CI at all before this --
+  # only ever packed manually, locally. Runs after every matrix leg succeeds (needs: build waits
+  # for the whole matrix), on every push, not just tag pushes: cheap (no native build, just
+  # restore+pack) and it means a broken Desktop package restore gets caught immediately instead
+  # of only at release time.
+  pack-desktop:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "TINS.Native.*"
+          path: artifacts/nupkg
+          merge-multiple: true
+
+      # TINS.Native.Desktop / TINS.Native.FFTW.Desktop pin an explicit version floor on their
+      # sibling RID packages instead of $(Version) (see that project's own comment for why).
+      # Before the first real release tag, nothing at that floor -- or anywhere else under the
+      # TINS.Native.* ID family -- has ever been published anywhere; the only packages that
+      # satisfy it are the ones this same CI run just built, downloaded above. Registering that
+      # folder as an ADDITIONAL restore source (not a replacement -- restore also needs nuget.org
+      # for MinVer itself) makes those freshly built siblings resolvable, the same pattern the
+      # smoke test steps above already use for the same reason.
+      #
+      # IMPORTANT for whoever cuts a real release: once real tagged versions exist on nuget.org,
+      # NuGet's default resolution picks the LOWEST version satisfying a floor across ALL
+      # configured sources -- so an un-bumped old floor could resolve to a stale already-published
+      # sibling instead of the new release's own siblings once this additive local source is gone
+      # post-publish. Bump these two csproj's PackageReference versions to match the new tag
+      # BEFORE pushing it, per Decision 8 in CLAUDE.md -- this job's local-source trick only makes
+      # THIS run's pack step resolve correctly, it doesn't fix the floor baked into the nuspec.
+      - name: Register just-built packages as a restore source
+        run: dotnet nuget add source "${{ github.workspace }}/artifacts/nupkg" --name just-built-native
+
+      - name: Pack TINS.Native.Desktop
+        run: dotnet pack pack/TINS.Native.Desktop/TINS.Native.Desktop.csproj -c Release -o artifacts/nupkg
+
+      - name: Pack TINS.Native.FFTW.Desktop
+        run: dotnet pack pack/TINS.Native.FFTW.Desktop/TINS.Native.FFTW.Desktop.csproj -c Release -o artifacts/nupkg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TINS.Native.Desktop
+          path: artifacts/nupkg/TINS.Native.Desktop.*.nupkg
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TINS.Native.FFTW.Desktop
+          path: artifacts/nupkg/TINS.Native.FFTW.Desktop.*.nupkg
+          if-no-files-found: error
+
+  # Only runs for a real release tag (vX.Y.Z, per Decision 7's MinVerTagPrefix), and only once
+  # every matrix leg AND the Desktop packing job have succeeded (needs: [build, pack-desktop]) --
+  # a push that isn't a version tag never reaches this job at all, so day-to-day commits/PRs never
+  # risk touching nuget.org.
+  publish:
+    needs: [build, pack-desktop]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # Trusted Publishing (OIDC), not a long-lived API key -- nuget.org's now-recommended approach
+    # (superseded the API-key design this job originally had). id-token: write is what lets this
+    # job request the GitHub-signed OIDC token that NuGet/login below exchanges for a short-lived
+    # (1 hour) nuget.org API key; without this permission the token request silently fails. Job-
+    # level `permissions:` REPLACES the default set rather than adding to it, so this job gets
+    # nothing else (no contents:read etc.) -- fine, it doesn't check the repo out or need anything
+    # beyond downloading this run's own artifacts and pushing them.
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "TINS.Native.*"
+          path: artifacts/nupkg
+          merge-multiple: true
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # Exchanges this job's OIDC token for a short-lived nuget.org API key -- requires a Trusted
+      # Publishing policy configured on nuget.org first (Repository Owner: HaraldBarzan,
+      # Repository: TINS-Library-Native, Workflow File: ci.yml -- filename only, not the
+      # .github/workflows/ path; see NUGET-PUBLISH-CHECKLIST.md). No NUGET_API_KEY secret needed
+      # at all with this approach, unlike the design this replaced. `user` is the nuget.org
+      # profile username (not email) that owns the policy -- stored as a secret per NuGet's own
+      # docs recommendation, though it isn't a credential itself, just an identifier.
+      - name: NuGet login (OIDC -> temporary API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USERNAME }}
+
+      # --skip-duplicate makes re-running a partially-failed publish safe: already-pushed versions
+      # are silently skipped instead of erroring the whole job.
+      - name: Publish to nuget.org
+        run: |
+          dotnet nuget push "artifacts/nupkg/*.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
+            --skip-duplicate
