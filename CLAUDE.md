@@ -30,19 +30,21 @@ Decision 9 below for the full rationale):
 > packages should reflect this: 3 of 4 RIDs ready, osx-x64 not yet.** See Status below for why and
 > what it would take to finish it.
 >
-> **The FFTW/core package split (Decision 9) AND the pocketfft shim (Decision 10) are both on the
-> `new-license-pocketfft` branch, not yet merged to `main`, but both ARE confirmed green in real CI**
-> (2026-09-23, split: run
-> [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678); shim:
-> run [35891221998](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35891221998)):
+> **The FFTW/core package split (Decision 9) and the pocketfft shim (Decision 10) are MERGED to
+> `main`** (2026-09-24, fast-forwarded from `new-license-pocketfft` — both were confirmed green in
+> real CI first: split, run
+> [35883211678](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35883211678); shim,
+> run [35891221998](https://github.com/HaraldBarzan/TINS-Library-Native/actions/runs/35891221998)).
 > win-x64, linux-x64, and osx-arm64 all staged, packed, and smoke-tested both families successfully,
 > with isolated smoke passes proving the core package never drags in FFTW, and the pocketfft shim's
-> P/Invoke r2c round trip passing on all three. All 6 nupkg artifacts (3 core + 3 FFTW) uploaded. None
-> of the original split's per-platform gotchas recurred for the newly-separated FFTW pack/stage/smoke
-> steps. **What's still missing before this is a real FFTW replacement, not just infrastructure:** no
-> code on the `tins-lib` side actually uses the pocketfft shim yet (no native provider classes, no
-> `FftProviderRegistry<T>` registration, `FFTW<T>` still a hard dependency there) — see Decision 9's
-> `tins-lib`-side bullet. Merge to `main` is still pending on that work, per the user's own call.
+> P/Invoke r2c round trip passing on all three. **Beyond this repo, the `tins-lib` side is also
+> real now, on its own unmerged `pocketfft` branch** — native provider classes,
+> `FftProviderRegistry<T>` registration, `FFTW<T>` made optional — and cross-repo integration was
+> verified on win-x64 (2026-09-24): `tins-lib`'s `pocketfft` branch restored against this repo's
+> packages, its full test suite passed, and its FFTW/managed/native three-way benchmark showed the
+> pocketfft shim producing correct results at FFTW-comparable accuracy. linux-x64/osx-arm64
+> cross-repo integration is still unverified (each side's own CI covers them independently, just not
+> together) — see Decision 9's `tins-lib`-side bullet for what's left there.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis) — this repo originally vendored
@@ -215,13 +217,13 @@ propose an alternative to one of these, stop and re-read this list instead:
   win-x64, linux-x64, and osx-arm64 all staged/packed/smoke-tested both `TINS.Native.<rid>` and
   `TINS.Native.FFTW.<rid>` successfully, with isolated smoke passes proving the core package never
   drags in FFTW. All 6 artifacts (3 core + 3 FFTW) uploaded.
-- **Merging `new-license-pocketfft` into `main` is explicitly deferred** (user's own call,
-  2026-09-23) **until the PocketFFT shim itself is implemented and tested**, not just the packaging
-  split. Rationale: merging now would put `main` in a state where the core `TINS.Native.<rid>`
-  package ships OpenBLAS only, with no native FFT capability at all until FFTW is added back in via
-  the opt-in GPL package — a real capability regression for any consumer pulling from `main` in the
-  meantime. Keep working on `pocketfft-shim/` on this branch (or push further split-adjacent fixes to
-  it) rather than merging early. Don't merge to `main` without being asked.
+- **`new-license-pocketfft` merged into `main`** (2026-09-24, fast-forward, user's own call) once
+  the deferral criterion was actually met: the PocketFFT shim implemented, CI-green on all three
+  active platforms, AND cross-repo integration verified against `tins-lib`'s `pocketfft` branch on
+  win-x64 (see the Project Overview callout above and the memory note on this migration for detail).
+  `main` now has the full FFTW/core split plus a working pocketfft shim — not just infrastructure,
+  a real, tested alternative to FFTW, though `tins-lib` itself still needs its own branch merged
+  before any downstream consumer actually gets it by default.
 - **win-x64, linux-x64, and osx-arm64 are all CONFIRMED fully green in real CI** (2026-08-26): genuine
   `vcpkg install` from source (not stand-ins), staged, packed, and smoke-tested successfully, with real
   `TINS.Native.<rid>` nupkgs uploaded as workflow artifacts. This is proven end-to-end, not just
