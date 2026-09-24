@@ -16,4 +16,14 @@
           PackagePath="runtimes/osx-x64/native/%(Filename)%(Extension)" Visible="false" />
   </ItemGroup>
 
+  <!-- BSD-3-Clause requires reproducing the copyright notice in redistributions: bundling the
+       actual upstream license text (not just the PackageLicenseExpression metadata above) alongside
+       the binaries it covers. See licenses/README.md for provenance/pinned-version notes. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\licenses\OpenBLAS-LICENSE.txt" Pack="true"
+          PackagePath="licenses\OpenBLAS-LICENSE.txt" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\licenses\PocketFFT-LICENSE.md" Pack="true"
+          PackagePath="licenses\PocketFFT-LICENSE.md" Visible="false" />
+  </ItemGroup>
+
 </Project>

@@ -8,8 +8,8 @@ Packages are split into two license-separated families, not just by RID — see 
 families" below before assuming this is one native package per RID:
 
 - **`TINS.Native.<rid>`** (`win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`) — **BSD-3-Clause.**
-  OpenBLAS plus the PocketFFT shim (`pocketfft-shim/`, BSD-3-Clause, implemented, not yet run
-  through real CI). This is the default package every consumer adds alongside `TINS.Core`. A fifth
+  OpenBLAS plus the PocketFFT shim (`pocketfft-shim/`, BSD-3-Clause, implemented and confirmed
+  green in real CI). This is the default package every consumer adds alongside `TINS.Core`. A fifth
   package, `TINS.Native.Desktop`, is a meta-package with no native content of its own that depends on
   all four RID packages, for a consumer that wants every desktop RID at once (e.g. a cross-platform
   test project).
@@ -34,7 +34,7 @@ pattern projects like FFmpeg use to ship GPL and LGPL builds as separate artifac
 | Library | win-x64 | linux-x64 | osx-x64 | osx-arm64 | Package | License |
 |---|---|---|---|---|---|---|
 | OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) | `TINS.Native.<rid>` | BSD-3-Clause |
-| PocketFFT | implemented, verified locally (not yet in CI) | untested | untested | untested | `TINS.Native.<rid>` | BSD-3-Clause |
+| PocketFFT | CI-built (bespoke CMake) | CI-built (bespoke CMake) | paused (see below) | CI-built (bespoke CMake) | `TINS.Native.<rid>` | BSD-3-Clause |
 | FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) | `TINS.Native.FFTW.<rid>` | GPL-2.0-or-later, opt-in |
 
 FFTW and OpenBLAS are built from source per-platform in CI via [vcpkg](https://vcpkg.io) (see
@@ -72,11 +72,16 @@ is no automated publish step yet — download the artifacts and drop them into a
 - `pack/TINS.Native.FFTW.<rid>/` — one minimal native-asset-only `.csproj` per RID (FFTW only,
   GPL-2.0-or-later, opt-in).
 - `pack/TINS.Native.Desktop/` — meta-package depending on all four core RID packages, no native
-  content of its own. (No FFTW equivalent yet — see CLAUDE.md.)
+  content of its own. `pack/TINS.Native.FFTW.Desktop/` is the equivalent for the FFTW family, minus
+  osx-x64 (no FFTW build exists for it, not even a placeholder — see CLAUDE.md).
+- `LICENSE` / `licenses/` — this repo's own BSD-3-Clause license, plus vendored upstream license
+  text for FFTW/OpenBLAS/pocketfft (BSD/GPL both require reproducing it in redistributions, not
+  just declaring `PackageLicenseExpression`), packed into the matching nupkg(s). See
+  `licenses/README.md` for exact provenance.
 - `pocketfft-shim/` — a bespoke CMake project (not a vcpkg overlay port) implementing a thin,
-  P/Invoke-able C ABI around header-only PocketFFT. Implemented and locally verified on win-x64
-  (export symbols, a standalone functional test harness, and a full .NET P/Invoke round trip); not
-  yet run through real CI.
+  P/Invoke-able C ABI around header-only PocketFFT. Implemented and confirmed green in real CI on
+  win-x64/linux-x64/osx-arm64 (export symbols, a standalone functional test harness, and a full
+  .NET P/Invoke round trip), and cross-repo-verified against `tins-lib`'s own native provider code.
 - `scripts/stage-native.ps1` — copies vcpkg's build output into a flat `runtimes/<rid>/native/`
   staging folder consumed by the pack step, split by `-Component Core|Fftw` into the two license
   families' separate staging roots.
@@ -92,8 +97,8 @@ is no automated publish step yet — download the artifacts and drop them into a
 ## Status
 
 `win-x64`, `linux-x64`, and `osx-arm64` have all been built, packed, and smoke-tested successfully in
-real CI, with genuine (not placeholder) native binaries. `osx-x64` is paused (see Scope above).
-`TINS-Library`'s `TINS.Core` still bundles its own win-x64 natives directly (unchanged) while this repo
-is being built out. The two will be reconciled — `TINS.Core` dropping its bundled natives in favor of
-an explicit `TINS.Native.<rid>` reference — once the remaining pieces (real `osx-x64` if/when
-re-enabled, and the PocketFFT shim replacing FFTW as the default FFT backend) are verified too.
+real CI, with genuine (not placeholder) native binaries, including the pocketfft shim. `osx-x64` is
+paused (see Scope above). `TINS-Library`'s `TINS.Core`, on its own `main` branch, still bundles its
+own win-x64 natives directly — that migration (dropping the glob in favor of an explicit
+`TINS.Native.<rid>` reference) exists on a separate `tins-lib` branch, not yet merged there either.
+The remaining piece before both repos can fully reconcile is a real `osx-x64` build, if/when needed.

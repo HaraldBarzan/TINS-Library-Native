@@ -23,4 +23,12 @@
           PackagePath="runtimes/linux-x64/native/%(Filename)%(Extension)" Visible="false" />
   </ItemGroup>
 
+  <!-- The GPL explicitly requires including a copy of the license with distributed binaries:
+       bundling the actual upstream COPYING text (not just the PackageLicenseExpression metadata
+       above). See licenses/README.md for provenance/pinned-version notes. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\licenses\FFTW-COPYING.txt" Pack="true"
+          PackagePath="licenses\FFTW-COPYING.txt" Visible="false" />
+  </ItemGroup>
+
 </Project>

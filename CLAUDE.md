@@ -155,10 +155,16 @@ propose an alternative to one of these, stop and re-read this list instead:
      first, then native once `pocketfft-shim/` is implemented — becomes the default FFT backend. Until
      that lands, `tins-lib`'s existing FFTW-based code still needs `TINS.Native.FFTW.<rid>` added
      explicitly alongside the core package to keep working.
-   - **License text bundling remains an open gap for all three libraries** (FFTW, OpenBLAS, PocketFFT)
-     — none of the nupkgs currently pack the actual upstream license text, only the
-     `PackageLicenseExpression` metadata. Worth fixing for all three at once when the PocketFFT shim
-     build wiring goes in, per `pocketfft-shim/README.md`'s own note on this.
+   - **License text bundling is done** (2026-09-24, `licenses/` — see that folder's own `README.md`
+     for provenance/pinned-version detail). Every RID nupkg now bundles the actual upstream license
+     text alongside `PackageLicenseExpression`, not just the metadata: BSD-3-Clause requires
+     reproducing the copyright notice in redistributions, GPL requires including a copy of the
+     license with distributed binaries — both real compliance requirements once this ships
+     publicly, not style preferences. A top-level `LICENSE` (this repo's own BSD-3-Clause) was
+     added too; there wasn't one before. Watch for an extensionless-`PackagePath` NuGet quirk if
+     adding more vendored license files: it nests into a duplicate subfolder
+     (`licenses/Foo-LICENSE/Foo-LICENSE`) instead of packing as one file unless the filename has an
+     extension (`.txt` works fine for a license file with no natural format).
 10. **The pocketfft shim (`pocketfft-shim/`) is a bespoke CMake project, not a vcpkg overlay port**
     — the one build-architecture question the interface draft had left open. It's our own first-party
     source (`src/tins_pocketfft.cpp` against `include/tins_pocketfft.h`), so none of the reasons that
@@ -454,6 +460,8 @@ is already part of the default source set for any subsequent restore in that sco
 | `pack/TINS.Native.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — OpenBLAS + the pocketfft shim, BSD-3-Clause |
 | `pack/TINS.Native.FFTW.<rid>/*.csproj` | Native-asset-only packaging projects, one per RID — FFTW only, GPL-2.0-or-later, opt-in (Decision 9) |
 | `pack/TINS.Native.Desktop/*.csproj` | Meta-package depending on all four core RID packages, no native content of its own. No FFTW equivalent yet (Decision 9) |
+| `LICENSE` | This repo's own BSD-3-Clause license (its original content only — scripts, packaging projects, `pocketfft-shim/` source). Added 2026-09-24; there wasn't one before |
+| `licenses/` | Vendored upstream license text for FFTW/OpenBLAS/pocketfft, packed into the matching nupkg(s) alongside `PackageLicenseExpression` — a real redistribution-compliance requirement (BSD/GPL both require it), not decoration. See `licenses/README.md` for exact provenance/pinned versions and the extensionless-`PackagePath` NuGet quirk this ran into |
 | `pocketfft-shim/CMakeLists.txt`, `include/tins_pocketfft.h`, `src/tins_pocketfft.cpp` | Implemented (Decision 10) — a bespoke CMake project (not a vcpkg overlay port) exposing header-only pocketfft as a P/Invoke-able C ABI. `TINS_POCKETFFT_API` export macro is load-bearing on Windows (MSVC exports nothing from a DLL without it) |
 | `scripts/build-pocketfft-shim.ps1` | Configures/builds/installs the pocketfft shim and copies its output into the same core staging folder `stage-native.ps1 -Component Core` uses |
 | `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998) |
