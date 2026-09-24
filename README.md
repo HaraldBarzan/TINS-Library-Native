@@ -33,18 +33,22 @@ pattern projects like FFmpeg use to ship GPL and LGPL builds as separate artifac
 
 | Library | win-x64 | linux-x64 | osx-x64 | osx-arm64 | Package | License |
 |---|---|---|---|---|---|---|
-| OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) | `TINS.Native.<rid>` | BSD-3-Clause |
-| PocketFFT | CI-built (bespoke CMake) | CI-built (bespoke CMake) | paused (see below) | CI-built (bespoke CMake) | `TINS.Native.<rid>` | BSD-3-Clause |
-| FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | paused (see below) | CI-built (vcpkg) | `TINS.Native.FFTW.<rid>` | GPL-2.0-or-later, opt-in |
+| OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | excluded (see below) | CI-built (vcpkg) | `TINS.Native.<rid>` | BSD-3-Clause |
+| PocketFFT | CI-built (bespoke CMake) | CI-built (bespoke CMake) | excluded (see below) | CI-built (bespoke CMake) | `TINS.Native.<rid>` | BSD-3-Clause |
+| FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | excluded (see below) | CI-built (vcpkg) | `TINS.Native.FFTW.<rid>` | GPL-2.0-or-later, opt-in |
 
 FFTW and OpenBLAS are built from source per-platform in CI via [vcpkg](https://vcpkg.io) (see
 `vcpkg.json`, `.github/workflows/ci.yml`) — both from the same manifest/vcpkg install per RID; the
 license split happens at staging/packing time (`scripts/stage-native.ps1 -Component Core|Fftw`), not
-in what vcpkg builds. `osx-x64` is temporarily commented out of the CI matrix — not dropped from the
-codebase, `pack/TINS.Native.osx-x64/` and `pack/TINS.Native.FFTW.osx-x64/` are untouched — both
-because GitHub Actions' free monthly minutes (macOS runners cost 10x wall-clock time against that
-quota) were exhausted standing up the other three RIDs, and because most Macs running this today are
-Apple Silicon (`osx-arm64`) rather than Intel. Uncomment the matrix entry in `ci.yml` to bring it back.
+in what vcpkg builds. **`osx-x64` is excluded, not just paused** (decided 2026-09-24, while
+assessing nuget.org publish readiness) — `pack/TINS.Native.osx-x64/` and `pack/TINS.Native.FFTW.osx-x64/`
+are untouched in the codebase, but this RID isn't expected to become real any time soon. It was
+originally just commented out of the CI matrix for quota reasons, but the runner that leg targets
+(`macos-13`) has since been fully deprecated by GitHub, and its replacement (`macos-15-intel`) isn't
+available on the GitHub Free plan at all — a plan-tier lockout, not something that resolves when
+quota resets. Revisit only given a paid GitHub plan, a self-hosted runner, real Intel Mac hardware,
+or real demand for it; most Macs running this today are Apple Silicon (`osx-arm64`) anyway, which
+is already real and working.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis); both were replaced with pure
@@ -52,8 +56,10 @@ managed code directly in `TINS.Core` (SVD/PCA now use the `OpenBLAS.SGESVD` call
 this repo; DPSS is a managed tridiagonal-eigensolver implementation), so there was never a need to
 build or vendor them here.
 
-`win-arm64` and `linux-arm64` are follow-ups, not yet in the CI matrix — pending verification of
-GitHub-hosted native ARM runner availability.
+`win-arm64` and `linux-arm64` are follow-ups, not yet in the CI matrix. GitHub-hosted native ARM
+runner availability is no longer the blocker — confirmed available (2026-01-29, private-repo GA,
+Free-plan eligible) — but they're deliberately deferred for now (2026-09-24): not currently useful
+enough to prioritize, revisit if that changes.
 
 ## Publishing
 
@@ -96,9 +102,9 @@ is no automated publish step yet — download the artifacts and drop them into a
 
 ## Status
 
-`win-x64`, `linux-x64`, and `osx-arm64` have all been built, packed, and smoke-tested successfully in
-real CI, with genuine (not placeholder) native binaries, including the pocketfft shim. `osx-x64` is
-paused (see Scope above). `TINS-Library`'s `TINS.Core`, on its own `main` branch, still bundles its
-own win-x64 natives directly — that migration (dropping the glob in favor of an explicit
-`TINS.Native.<rid>` reference) exists on a separate `tins-lib` branch, not yet merged there either.
-The remaining piece before both repos can fully reconcile is a real `osx-x64` build, if/when needed.
+`win-x64`, `linux-x64`, and `osx-arm64` have all been built, packed, and smoke-tested successfully
+in real CI, with genuine (not placeholder) native binaries, including the pocketfft shim. `osx-x64`
+is excluded, not paused (see Scope above) — not something either repo needs to wait on.
+`TINS-Library`'s `TINS.Core`, on its own `main` branch, still bundles its own win-x64 natives
+directly — that migration (dropping the glob in favor of an explicit `TINS.Native.<rid>` reference)
+exists on a separate `tins-lib` branch, not yet merged there either.

@@ -16,13 +16,16 @@ jobs:
           - rid: linux-x64
             os: ubuntu-latest
             triplet: x64-linux-dynamic
-          # osx-x64 temporarily out of the CI matrix (not dropped from the codebase --
-          # pack/TINS.Native.osx-x64/ and the RID package itself are untouched). Two
-          # reasons: (1) macOS runners cost 10x against GitHub Actions' free included
-          # minutes, and this repo's free monthly quota got exhausted standing up the
-          # other three legs; (2) most Macs actually running this today are Apple
-          # Silicon (osx-arm64), so x64 is lower priority. Uncomment to re-enable once
-          # quota allows or x64 Mac support is actually needed.
+          # osx-x64 is EXCLUDED (not just paused for quota -- see CLAUDE.md's Status section,
+          # 2026-09-24). Originally commented out just because this repo's free Actions minutes
+          # were exhausted standing up the other three legs, and most Macs running this today are
+          # Apple Silicon anyway. But the runner this leg targeted, macos-13, has since been fully
+          # deprecated by GitHub, and its replacement (macos-15-intel) is NOT available on the
+          # GitHub Free plan at all -- a plan-tier lockout, not something quota resetting fixes.
+          # pack/TINS.Native.osx-x64/ and the RID package itself are untouched in the codebase, but
+          # don't just uncomment this leg expecting it to work -- it needs a paid GitHub plan, a
+          # self-hosted runner, or real Intel Mac hardware, plus updating the runner label below
+          # (macos-13 no longer exists) before it could even be attempted.
           # - rid: osx-x64
           #   os: macos-13
           #   triplet: x64-osx-dynamic

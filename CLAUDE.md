@@ -24,11 +24,18 @@ Decision 9 below for the full rationale):
 
 > **Current package readiness: `TINS.Native.win-x64`, `TINS.Native.linux-x64`, and
 > `TINS.Native.osx-arm64` are real and working — built, packed, and smoke-tested in CI with genuine
-> vcpkg source builds. `TINS.Native.osx-x64` is NOT ready — no real build has ever been produced for
-> it (only a non-functional placeholder), and it's currently paused out of the CI matrix pending
-> GitHub Actions quota. Any downstream project (e.g. `tins-lib`) documenting or consuming these
-> packages should reflect this: 3 of 4 RIDs ready, osx-x64 not yet.** See Status below for why and
-> what it would take to finish it.
+> vcpkg source builds. `TINS.Native.osx-x64` is EXCLUDED** (user's own call, 2026-09-24) **— not
+> paused pending quota, genuinely excluded from the plan.** No real build has ever been produced for
+> it (only a non-functional placeholder). Originally the CI leg was just commented out for quota
+> reasons, but re-checking GitHub's current runner offerings (2026-09-24) found the situation is
+> worse than "wait for quota to reset": the runner that leg targeted, `macos-13`, was fully
+> deprecated by GitHub in December 2025, and its replacement (`macos-15-intel`) is **not available
+> on the GitHub Free plan at all** — a plan-tier lockout, not a quota problem. Getting a real
+> osx-x64 build would need a paid GitHub plan (Team/Enterprise), a self-hosted runner, or actual
+> Intel Mac hardware — worth revisiting only if real demand for Intel Mac support appears; most
+> Macs running this today are Apple Silicon anyway (`osx-arm64`, already real and working). Any
+> downstream project (e.g. `tins-lib`) documenting or consuming these packages should reflect this:
+> 3 of 4 RIDs ready, osx-x64 excluded, not "coming soon." See Status below for detail.
 >
 > **The FFTW/core package split (Decision 9) and the pocketfft shim (Decision 10) are MERGED to
 > `main`** (2026-09-24, fast-forwarded from `new-license-pocketfft` — both were confirmed green in
@@ -82,8 +89,17 @@ propose an alternative to one of these, stop and re-read this list instead:
    back into `TINS.Core`'s actual `NativeImportResolver.cs`) is a deliberate, separate, later pass —
    only do it if explicitly asked, and only after this repo's packages are proven working across all
    RIDs in CI.
-5. **`win-arm64` and `linux-arm64` are stretch/follow-up RIDs**, not in the CI matrix yet — GitHub-hosted
-   native ARM runner availability needs verifying before adding them.
+5. **`win-arm64` and `linux-arm64` are stretch/follow-up RIDs**, not in the CI matrix yet. Originally
+   blocked on verifying GitHub-hosted native ARM runner availability — **that's now resolved**:
+   checked live (2026-09-24), GitHub rolled out Linux/Windows ARM64 *standard* hosted runners to
+   private repositories on 2026-01-29 (`ubuntu-24.04-arm`/`ubuntu-22.04-arm` etc., 2 vCPU/8GB in
+   private repos), usable on the Free plan and counted against normal included minutes, not a
+   paid-only "larger runner" tier. So linux-arm64 is technically addable now — **deliberately
+   deferred anyway** (user's own call, 2026-09-24: "probably not useful at the moment"), not
+   blocked. Revisit when there's an actual reason to want it, not just because it became possible;
+   expect a fresh round of CI surprises when it does happen (new vcpkg triplet, NEON vs. AVX code
+   paths nothing here has touched yet — the Linux `NO_AVX*` OpenBLAS fix is x64-specific and hasn't
+   been checked for relevance/harmlessness on ARM).
 6. **OpenBLAS is built via a local overlay port (`vcpkg-overlays/openblas/`), not vcpkg's stock port.**
    This is load-bearing, not a style choice: upstream vcpkg's `openblas` port unconditionally passes
    `-DBUILD_WITHOUT_LAPACK=ON` (no feature flag to turn it off), which drops LAPACK — including
@@ -234,13 +250,18 @@ propose an alternative to one of these, stop and re-read this list instead:
   `vcpkg install` from source (not stand-ins), staged, packed, and smoke-tested successfully, with real
   `TINS.Native.<rid>` nupkgs uploaded as workflow artifacts. This is proven end-to-end, not just
   "should work" — see the CI debugging log below for exactly what it took.
-- **osx-x64 is commented out of the CI matrix** (`.github/workflows/ci.yml`), not dropped from the
-  codebase — `pack/TINS.Native.osx-x64/` and the RID package itself are untouched, and CI still had it
-  queued (blocked on GitHub Actions quota, see below) when it was disabled. Two reasons: (1) this
-  repo's free Actions minutes were exhausted standing up the other three legs, and (2) most Macs
-  actually running this today are Apple Silicon (osx-arm64), so x64 is lower priority. Uncomment the
-  matrix entry (clearly marked in the YAML) once quota allows or x64 Mac support is actually needed —
-  the underlying build/package/smoke-test steps need no changes, they're identical across RIDs.
+- **osx-x64 is EXCLUDED, not just paused** (user's own call, 2026-09-24, made while assessing
+  nuget.org publish readiness — see `NUGET-PUBLISH-CHECKLIST.md`, local-only, not committed).
+  Originally commented out of the CI matrix purely for quota reasons (this repo's free Actions
+  minutes were exhausted standing up the other three legs), but re-checking GitHub's current runner
+  offerings found something worse than a quota wait: `macos-13` (the runner that leg targets) was
+  fully deprecated by GitHub in December 2025, and its replacement, `macos-15-intel`, is **not
+  available on the GitHub Free plan at all**. This is now a plan-tier lockout, not something that
+  resolves on its own when quota resets. `pack/TINS.Native.osx-x64/` and the RID package itself are
+  still untouched in the codebase (per Decision 2, don't delete without a new explicit reason to),
+  but treat this RID as genuinely unsupported for the foreseeable future, not "coming soon" — most
+  Macs running this today are Apple Silicon (`osx-arm64`) anyway. Revisit only given a paid GitHub
+  plan, a self-hosted runner, real Intel Mac hardware, or real demand for Intel Mac support.
 - **GitHub Actions free quota is a real, binding constraint on this repo.** Personal GitHub Free plan:
   2,000 included minutes/month, but macOS runners consume quota at **10x** wall-clock time (Linux is
   1x, Windows is 2x) — two full CI iterations with all 4 legs was enough to exhaust it. The account's
@@ -320,14 +341,13 @@ one of these regressing, or covered by a fix that got scoped incorrectly:
 
 ## Known open uncertainties (verify before trusting, don't assume)
 
-- **`osx-x64` filenames/behavior specifically** are still unconfirmed — it's the one RID that has never
-  actually run in CI (commented out of the matrix for quota reasons, see Status). `osx-arm64` is
-  confirmed and both Apple platforms should behave identically (same Clang toolchain, same vcpkg
-  triplet family), but that's an inference, not a direct observation, until `osx-x64` is re-enabled and
-  actually run.
-- Whether GitHub still hosts an Intel macOS runner image (`macos-13`, what the disabled `osx-x64` leg
-  targets) long-term — Apple Silicon has been the default (`macos-latest`/`macos-14`+) for a while and
-  Intel images may be on a deprecation path. Check before re-enabling that leg.
+- **`osx-x64` filenames/behavior specifically** remain unconfirmed and, per the exclusion decision
+  in Status, aren't expected to get confirmed any time soon — it's the one RID that has never
+  actually run in CI. `osx-arm64` is confirmed and both Apple platforms should behave identically
+  (same Clang toolchain, same vcpkg triplet family), but that remains an inference, not a direct
+  observation, unless osx-x64 support is ever actually pursued (this was previously phrased as
+  "check before re-enabling `macos-13`" — resolved now: `macos-13` is gone, and its replacement
+  isn't available on the Free plan at all, see Status; don't re-derive this, it's settled).
 - `SGESVD`/LAPACK presence has only been directly verified (via `dumpbin /exports`-equivalent symbol
   inspection) on win-x64. `linux-x64` and `osx-arm64` use the exact same overlay port with the same
   flags and built/packed/smoke-tested successfully, so it's very likely fine, but nobody has run
@@ -464,5 +484,5 @@ is already part of the default source set for any subsequent restore in that sco
 | `licenses/` | Vendored upstream license text for FFTW/OpenBLAS/pocketfft, packed into the matching nupkg(s) alongside `PackageLicenseExpression` — a real redistribution-compliance requirement (BSD/GPL both require it), not decoration. See `licenses/README.md` for exact provenance/pinned versions and the extensionless-`PackagePath` NuGet quirk this ran into |
 | `pocketfft-shim/CMakeLists.txt`, `include/tins_pocketfft.h`, `src/tins_pocketfft.cpp` | Implemented (Decision 10) — a bespoke CMake project (not a vcpkg overlay port) exposing header-only pocketfft as a P/Invoke-able C ABI. `TINS_POCKETFFT_API` export macro is load-bearing on Windows (MSVC exports nothing from a DLL without it) |
 | `scripts/build-pocketfft-shim.ps1` | Configures/builds/installs the pocketfft shim and copies its output into the same core staging folder `stage-native.ps1 -Component Core` uses |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998) |
+| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out and excluded — see Status): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998) |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present; the core check now also round-trips a real r2c transform through the pocketfft shim via P/Invoke, not just a symbol-presence probe |
