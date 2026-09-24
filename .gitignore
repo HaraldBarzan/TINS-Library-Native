@@ -1,3 +1,6 @@
+## Local scratch files, not meant to be committed
+BUG-REPORT-DESKTOP-FLOOR.md
+
 bin/
 obj/
 artifacts/

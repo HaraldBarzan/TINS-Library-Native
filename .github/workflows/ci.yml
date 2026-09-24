@@ -205,13 +205,13 @@ jobs:
       # for MinVer itself) makes those freshly built siblings resolvable, the same pattern the
       # smoke test steps above already use for the same reason.
       #
-      # IMPORTANT for whoever cuts a real release: once real tagged versions exist on nuget.org,
-      # NuGet's default resolution picks the LOWEST version satisfying a floor across ALL
-      # configured sources -- so an un-bumped old floor could resolve to a stale already-published
-      # sibling instead of the new release's own siblings once this additive local source is gone
-      # post-publish. Bump these two csproj's PackageReference versions to match the new tag
-      # BEFORE pushing it, per Decision 8 in CLAUDE.md -- this job's local-source trick only makes
-      # THIS run's pack step resolve correctly, it doesn't fix the floor baked into the nuspec.
+      # IMPORTANT for whoever cuts a real release: bump these two csproj's PackageReference
+      # versions to match a real, already-published sibling version BEFORE pushing a new tag, per
+      # Decision 8 in CLAUDE.md -- this job's local-source trick only makes THIS run's pack step
+      # resolve correctly, it doesn't fix the floor baked into the published nuspec. Forgetting
+      # this once (v1.0.0 -> v1.0.1, 2026-09-24) is exactly why the verification step below exists
+      # now: it queries nuget.org for each floor and fails the job if any floor version was never
+      # actually published, instead of silently shipping a stale reference again.
       - name: Register just-built packages as a restore source
         run: dotnet nuget add source "${{ github.workspace }}/artifacts/nupkg" --name just-built-native
 
@@ -220,6 +220,64 @@ jobs:
 
       - name: Pack TINS.Native.FFTW.Desktop
         run: dotnet pack pack/TINS.Native.FFTW.Desktop/TINS.Native.FFTW.Desktop.csproj -c Release -o artifacts/nupkg
+
+      # Guard rail added 2026-09-24 after the exact failure it checks for actually happened: the
+      # v1.0.0 tag shipped TINS.Native.Desktop/FFTW.Desktop still pinned to a pre-release floor
+      # (0.0.0-alpha.1.22) that was never published to nuget.org at all (publishing used to be
+      # local-artifact-only -- see Decision 3), producing a permanent NU1603 warning on every
+      # consumer restore. Extracts every <dependency id, version> pair from both just-packed
+      # nuspecs and confirms each exact version string is actually present on nuget.org's
+      # v3-flatcontainer index for that package id -- not just "some version exists", the EXACT
+      # floor. A floor that's satisfied only by resolving upward past it (like alpha.1.22 was)
+      # means this check would have failed loudly here instead of shipping silently.
+      - name: Verify Desktop dependency floors are actually published
+        shell: pwsh
+        run: |
+          $failed = $false
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $nupkgs = Get-ChildItem "artifacts/nupkg/TINS.Native.Desktop.*.nupkg", "artifacts/nupkg/TINS.Native.FFTW.Desktop.*.nupkg"
+          foreach ($nupkg in $nupkgs) {
+            try {
+              # Expand-Archive refuses a .nupkg extension outright ("only .zip is supported"),
+              # despite a nupkg being an ordinary zip -- confirmed by hitting this for real while
+              # testing this exact step. ZipFile.ExtractToDirectory has no such extension check.
+              $extractDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+              [System.IO.Compression.ZipFile]::ExtractToDirectory($nupkg.FullName, $extractDir)
+              $nuspecFile = Get-ChildItem $extractDir -Filter *.nuspec -ErrorAction Stop | Select-Object -First 1
+              if (-not $nuspecFile) { throw "no .nuspec found inside $($nupkg.Name)" }
+              [xml]$nuspec = Get-Content $nuspecFile.FullName -ErrorAction Stop
+            } catch {
+              # Deliberately fails the check on ANY inspection error rather than silently
+              # skipping it -- an earlier draft of this script let unhandled Expand-Archive/
+              # Get-Content errors fall through uncaught, which left $failed permanently false
+              # (a guard rail that always reports success is worse than no guard rail at all).
+              Write-Host "::error::Failed to inspect $($nupkg.Name): $_"
+              $failed = $true
+              continue
+            }
+            $deps = $nuspec.package.metadata.dependencies.group.dependency
+            foreach ($dep in $deps) {
+              $id = $dep.id
+              $version = $dep.version
+              $indexUrl = "https://api.nuget.org/v3-flatcontainer/$($id.ToLowerInvariant())/index.json"
+              try {
+                $published = (Invoke-RestMethod -Uri $indexUrl -ErrorAction Stop).versions
+              } catch {
+                Write-Host "::error::Could not query nuget.org for '$id' (required by $($nupkg.Name)): $_"
+                $failed = $true
+                continue
+              }
+              if ($published -notcontains $version) {
+                Write-Host "::error::$($nupkg.Name) depends on '$id >= $version', but $id $version has never been published to nuget.org. Bump the PackageReference floor in the matching .csproj to a real, published sibling version before tagging a release (see CLAUDE.md Decision 8/9)."
+                $failed = $true
+              } else {
+                Write-Host "OK: $id $version is published on nuget.org (required by $($nupkg.Name))"
+              }
+            }
+          }
+          if ($failed) {
+            exit 1
+          }
 
       - uses: actions/upload-artifact@v4
         with:

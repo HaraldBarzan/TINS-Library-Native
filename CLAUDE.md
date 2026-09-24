@@ -115,14 +115,45 @@ propose an alternative to one of these, stop and re-read this list instead:
      platform, not just osx-x64 users, the moment it was ever really published. Dropped the
      reference entirely (see that csproj's own comment for detail) rather than pointing it at a
      version that will never exist.
-   - **Release-cutting nuance, not yet relevant until a real tag exists**: `TINS.Native.Desktop`/
-     `TINS.Native.FFTW.Desktop`'s pinned floors (Decision 8) must be bumped to match the exact new
-     release version *before* pushing a real `vX.Y.Z` tag, once nuget.org actually has more than one
-     published version to choose from — otherwise NuGet's default lowest-version-satisfying-the-floor
-     resolution could hand a consumer an older, already-published sibling instead of the new
-     release's own. `pack-desktop`'s additive local source only fixes resolution for that job's own
-     pack step, not the floor baked into the published nuspec. Not an issue for the very first
-     release (nothing else exists yet to be resolved to), but don't forget it for the second one.
+   - **The release-cutting nuance above actually happened, exactly as predicted, on the very first
+     release.** `v1.0.0` shipped `TINS.Native.Desktop`/`TINS.Native.FFTW.Desktop` still pinned to
+     the pre-tag `0.0.0-alpha.1.22` floor — nobody bumped it before tagging. Impact was cosmetic
+     (NuGet still resolved up to the real `1.0.0` correctly) but produced a permanent `NU1603`
+     warning on every consumer restore, and was exactly the "stale floor" failure mode Decision 8
+     exists to prevent. Fixed 2026-09-24: both csproj's floors bumped to `1.0.0` (the real,
+     currently-published sibling version — *not* `1.0.1`, see below), shipped via a `v1.0.1` tag.
+     Note the version split is intentional and fine: a package's own version and its dependency
+     floors are independent in NuGet — `TINS.Native.Desktop 1.0.1` depending on
+     `TINS.Native.win-x64 >= 1.0.0` is correct, since the RID packages' actual binaries didn't
+     change, only the Desktop packages needed a fix. (Side effect of the shared-repo-wide MinVer
+     version, unrelated to this bug: tagging `v1.0.1` republishes all 8 packages, not just the 2
+     Desktop ones, so nuget.org now has two byte-identical versions of each RID package. Harmless,
+     just an accepted quirk of one version stream for the whole repo — see Decision 7.)
+   - **A guard rail now exists specifically so this can't silently recur**: `pack-desktop` has a
+     "Verify Desktop dependency floors are actually published" step (added 2026-09-24, in direct
+     response to the bug above) that extracts every `<dependency id, version>` pair from both
+     just-packed Desktop nuspecs and queries nuget.org's `v3-flatcontainer` index to confirm each
+     *exact* floor version is actually published — not just "some version exists". If a floor
+     references a version nuget.org has never seen (exactly what happened with `alpha.1.22`), the
+     job fails loudly instead of packing/publishing a stale reference silently. Runs on every push
+     (part of `pack-desktop`), so a bad floor bump gets caught well before a tag is ever pushed, not
+     just at release time.
+     - **A real bug was caught and fixed in this guard-rail script itself before it was trusted**:
+       the first draft used `Expand-Archive` on the `.nupkg` file, which PowerShell refuses outright
+       (`.zip` only, despite a nupkg being an ordinary zip) — and because that failure wasn't wrapped
+       in a `try`/`catch`, it fell through uncaught, leaving `$failed` permanently `$false`. A guard
+       rail that always silently reports success is worse than no guard rail — caught by actually
+       running the script locally before trusting it, not by reasoning about the YAML. Fixed with
+       `[System.IO.Compression.ZipFile]::ExtractToDirectory` (no extension check) and a proper
+       `try`/`catch` around the whole inspection step that sets `$failed = $true` on any error.
+       Verified both directions before landing: the fixed `1.0.0` floor passes, and re-querying
+       nuget.org for the old `0.0.0-alpha.1.22` floor directly confirms it would have failed loudly.
+   - **Considered, deliberately not done (yet)**: decoupling the RID packages' and Desktop
+     meta-packages' version streams (e.g. separate `MinVerTagPrefix` per family) so a Desktop-only
+     fix doesn't force a no-op republish of all 6 RID packages. Would reduce *how often* the floor
+     needs touching, but doesn't address the actual root cause (a human forgetting a manual step),
+     which the guard rail above already covers directly. Revisit only if the wasted-republish
+     side effect itself becomes a real problem, not just for its own sake.
 4. **`tins-lib` itself is untouched by this repo's work so far**, aside from the SVD/DPSS-elimination
    changes noted above (those landed directly in `tins-lib`, unrelated to this repo's own packaging).
    `TINS.Core` still bundles its own win-x64 FFTW/OpenBLAS natives via
@@ -536,5 +567,5 @@ is already part of the default source set for any subsequent restore in that sco
 | `licenses/` | Vendored upstream license text for FFTW/OpenBLAS/pocketfft, packed into the matching nupkg(s) alongside `PackageLicenseExpression` — a real redistribution-compliance requirement (BSD/GPL both require it), not decoration. See `licenses/README.md` for exact provenance/pinned versions and the extensionless-`PackagePath` NuGet quirk this ran into |
 | `pocketfft-shim/CMakeLists.txt`, `include/tins_pocketfft.h`, `src/tins_pocketfft.cpp` | Implemented (Decision 10) — a bespoke CMake project (not a vcpkg overlay port) exposing header-only pocketfft as a P/Invoke-able C ABI. `TINS_POCKETFFT_API` export macro is load-bearing on Windows (MSVC exports nothing from a DLL without it) |
 | `scripts/build-pocketfft-shim.ps1` | Configures/builds/installs the pocketfft shim and copies its output into the same core staging folder `stage-native.ps1 -Component Core` uses |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out and excluded — see Status): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998). Plus two jobs added 2026-09-24: `pack-desktop` (packs the two Desktop meta-packages against the matrix's own just-built artifacts, every push) and `publish` (tag-gated `vX.Y.Z` only, pushes all 8 nupkgs the active 3-RID matrix produces to nuget.org via Trusted Publishing/OIDC — policy + the `NUGET_USERNAME` secret both already set up, see Decision 3) |
+| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out and excluded — see Status): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998). Plus two jobs added 2026-09-24: `pack-desktop` (packs the two Desktop meta-packages against the matrix's own just-built artifacts, every push — also verifies each Desktop nuspec's dependency floors are actually published on nuget.org, added after v1.0.0 shipped a stale one, see Decision 3) and `publish` (tag-gated `vX.Y.Z` only, pushes all 8 nupkgs the active 3-RID matrix produces to nuget.org via Trusted Publishing/OIDC — policy + the `NUGET_USERNAME` secret both already set up, see Decision 3) |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present; the core check now also round-trips a real r2c transform through the pocketfft shim via P/Invoke, not just a symbol-presence probe |

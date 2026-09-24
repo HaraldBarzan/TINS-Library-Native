@@ -9,26 +9,25 @@
     <!-- GPL-2.0-or-later, matching the RID packages this depends on; see CLAUDE.md's decision
          on the FFTW/core license split for why FFTW lives in its own opt-in family at all. -->
     <PackageLicenseExpression>GPL-2.0-or-later</PackageLicenseExpression>
-    <Description>Meta-package bundling TINS.Native.FFTW.win-x64, TINS.Native.FFTW.linux-x64, and TINS.Native.FFTW.osx-arm64, so a multi-platform consumer that has already decided to accept FFTW's GPL-2.0-or-later obligation can pull in FFTW for every built desktop RID with a single reference instead of adding each RID package individually. A single-RID deployment should still reference just its own TINS.Native.FFTW.&lt;rid&gt; package directly -- this carries no native content of its own. osx-x64 is deliberately excluded (see the PackageReference comment below), unlike the core TINS.Native.Desktop package, which does include a placeholder for it.</Description>
+    <Description>Meta-package bundling TINS.Native.FFTW.win-x64, TINS.Native.FFTW.linux-x64, and TINS.Native.FFTW.osx-arm64, so a multi-platform consumer that has already decided to accept FFTW's GPL-2.0-or-later obligation can pull in FFTW for every built desktop RID with a single reference instead of adding each RID package individually. A single-RID deployment should still reference just its own TINS.Native.FFTW.&lt;rid&gt; package directly -- this carries no native content of its own. osx-x64 is deliberately excluded (see the PackageReference comment below), matching the core TINS.Native.Desktop package, which also no longer references it.</Description>
     <PackageTags>Neuroscience, Native, FFTW, GPL, Desktop</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Same floor-pinning rationale as TINS.Native.Desktop (see that project's own comment for the
-         full three-iteration history): "0.0.0-alpha.1.22" is the height all three of these RIDs
-         were actually built and smoke-tested at (2026-09-23, first CI run of the FFTW/core split).
+         full history, including the 2026-09-24 bump to "1.0.0" fixing the stale-floor NU1603 bug).
 
-         osx-x64 is NOT referenced here at all, unlike TINS.Native.Desktop (which does include an
-         osx-x64 PackageReference, pinned to a non-functional placeholder left over from before this
-         repo had a real build for it). TINS.Native.FFTW.osx-x64 has never been built even as a
-         placeholder under this new split naming; no package by that name/version exists in any
-         feed today. Referencing it here would make this meta-package fail to restore entirely,
-         which is strictly worse than a 3-of-4-RID bundle that actually works. Add it back once
-         TINS.Native.FFTW.osx-x64 exists in some form (real build or at least a repacked
-         placeholder matching this height), rather than fabricating one just for this file. -->
-    <PackageReference Include="TINS.Native.FFTW.win-x64" Version="0.0.0-alpha.1.22" />
-    <PackageReference Include="TINS.Native.FFTW.linux-x64" Version="0.0.0-alpha.1.22" />
-    <PackageReference Include="TINS.Native.FFTW.osx-arm64" Version="0.0.0-alpha.1.22" />
+         osx-x64 is NOT referenced here at all, unlike TINS.Native.Desktop used to (it dropped its
+         own osx-x64 placeholder reference the same day, for the same underlying reason: no
+         TINS.Native.FFTW.osx-x64 package has ever been built, even as a placeholder, under this
+         split naming; no package by that name/version exists in any feed today. Referencing it
+         here would make this meta-package fail to restore entirely, which is strictly worse than a
+         3-of-4-RID bundle that actually works. Add it back once TINS.Native.FFTW.osx-x64 exists in
+         some form (real build or at least a repacked placeholder), rather than fabricating one just
+         for this file. -->
+    <PackageReference Include="TINS.Native.FFTW.win-x64" Version="1.0.0" />
+    <PackageReference Include="TINS.Native.FFTW.linux-x64" Version="1.0.0" />
+    <PackageReference Include="TINS.Native.FFTW.osx-arm64" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

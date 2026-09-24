@@ -56,10 +56,19 @@
          be published. A PackageReference to a package that doesn't exist on the target feed doesn't
          just degrade for osx-x64 users; it fails restore for this ENTIRE meta-package, for every
          consumer on every platform. Don't add it back unless osx-x64 gets a real (or at least
-         actually-published) build of its own. -->
-    <PackageReference Include="TINS.Native.win-x64" Version="0.0.0-alpha.1.22" />
-    <PackageReference Include="TINS.Native.linux-x64" Version="0.0.0-alpha.1.22" />
-    <PackageReference Include="TINS.Native.osx-arm64" Version="0.0.0-alpha.1.22" />
+         actually-published) build of its own.
+
+         Bumped to "1.0.0" (2026-09-24, fixing a real bug): the v1.0.0 tag/publish shipped the
+         siblings at clean "1.0.0" but this floor was left at the pre-tag "0.0.0-alpha.1.22",
+         producing NU1603 ("dependency version not found, nearest match used") on every consumer
+         restore; cosmetic since NuGet still resolved up to the real 1.0.0 correctly, but exactly
+         the stale-floor failure mode this pinning design exists to prevent, and permanent noise
+         until fixed. This package's own version moves to 1.0.1 (next tag) to publish the fix; this
+         floor points at 1.0.0, the actual current sibling version, not 1.0.1; the siblings
+         themselves aren't changing, only these two Desktop packages are. -->
+    <PackageReference Include="TINS.Native.win-x64" Version="1.0.0" />
+    <PackageReference Include="TINS.Native.linux-x64" Version="1.0.0" />
+    <PackageReference Include="TINS.Native.osx-arm64" Version="1.0.0" />
   </ItemGroup>
 
 </Project>
