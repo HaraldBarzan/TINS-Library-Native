@@ -16,19 +16,19 @@ jobs:
           - rid: linux-x64
             os: ubuntu-latest
             triplet: x64-linux-dynamic
-          # osx-x64 is EXCLUDED (not just paused for quota -- see CLAUDE.md's Status section,
-          # 2026-09-24). Originally commented out just because this repo's free Actions minutes
-          # were exhausted standing up the other three legs, and most Macs running this today are
-          # Apple Silicon anyway. But the runner this leg targeted, macos-13, has since been fully
-          # deprecated by GitHub, and its replacement (macos-15-intel) is NOT available on the
-          # GitHub Free plan at all -- a plan-tier lockout, not something quota resetting fixes.
-          # pack/TINS.Native.osx-x64/ and the RID package itself are untouched in the codebase, but
-          # don't just uncomment this leg expecting it to work -- it needs a paid GitHub plan, a
-          # self-hosted runner, or real Intel Mac hardware, plus updating the runner label below
-          # (macos-13 no longer exists) before it could even be attempted.
-          # - rid: osx-x64
-          #   os: macos-13
-          #   triplet: x64-osx-dynamic
+          # Re-enabled 2026-10-15. Previously excluded because the original runner (macos-13) was
+          # deprecated by GitHub (Dec 2025) and its replacement was believed to need a paid plan --
+          # re-checked live against GitHub's current docs and that's wrong (or no longer true):
+          # macos-15-intel is listed as a STANDARD GitHub-hosted runner (not a "larger runner"),
+          # so it's available on every plan tier, draws on the normal per-minute allowance like any
+          # other standard runner, and since this repo is public, standard runners are free and
+          # unlimited here regardless. First real build for this RID -- osx-arm64 (Apple Clang,
+          # ARM) is confirmed green, but x64-osx is a different triplet (x86_64) on the same Clang
+          # toolchain family; watch for it hitting the OpenBLAS/AVX-SIMD GCC bug the NO_AVX* fix
+          # was scoped to Linux-only for (unlikely, since this is Clang not GCC, but untested).
+          - rid: osx-x64
+            os: macos-15-intel
+            triplet: x64-osx-dynamic
           - rid: osx-arm64
             os: macos-14
             triplet: arm64-osx-dynamic
