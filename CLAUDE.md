@@ -22,20 +22,16 @@ Decision 9 below for the full rationale):
   the GPL obligation for their own application. No `Desktop`-style meta-package for this family yet —
   see Decision 9.
 
-> **Current package readiness: `TINS.Native.win-x64`, `TINS.Native.linux-x64`, and
-> `TINS.Native.osx-arm64` are real and working — built, packed, and smoke-tested in CI with genuine
-> vcpkg source builds. `TINS.Native.osx-x64` is EXCLUDED** (user's own call, 2026-09-24) **— not
-> paused pending quota, genuinely excluded from the plan.** No real build has ever been produced for
-> it (only a non-functional placeholder). Originally the CI leg was just commented out for quota
-> reasons, but re-checking GitHub's current runner offerings (2026-09-24) found the situation is
-> worse than "wait for quota to reset": the runner that leg targeted, `macos-13`, was fully
-> deprecated by GitHub in December 2025, and its replacement (`macos-15-intel`) is **not available
-> on the GitHub Free plan at all** — a plan-tier lockout, not a quota problem. Getting a real
-> osx-x64 build would need a paid GitHub plan (Team/Enterprise), a self-hosted runner, or actual
-> Intel Mac hardware — worth revisiting only if real demand for Intel Mac support appears; most
-> Macs running this today are Apple Silicon anyway (`osx-arm64`, already real and working). Any
-> downstream project (e.g. `tins-lib`) documenting or consuming these packages should reflect this:
-> 3 of 4 RIDs ready, osx-x64 excluded, not "coming soon." See Status below for detail.
+> **Current package readiness: all four RIDs — `TINS.Native.win-x64`, `TINS.Native.linux-x64`,
+> `TINS.Native.osx-x64`, and `TINS.Native.osx-arm64` — are real and working**, built, packed, and
+> smoke-tested in CI with genuine vcpkg source builds. `osx-x64` was excluded from 2026-09-24 to
+> 2026-10-15 (`macos-13` deprecated, its replacement believed to need a paid plan) — **re-checked
+> live against GitHub's current docs (2026-10-15) and that belief was wrong (or no longer true)**:
+> `macos-15-intel` is a *standard* GitHub-hosted runner, not a "larger runner," so it's available on
+> every plan tier and free/unlimited on this public repo regardless. Re-enabled and confirmed green
+> on first attempt, including both smoke tests. Any downstream project (e.g. `tins-lib`) documenting
+> or consuming these packages should reflect this: all 4 RIDs ready, none excluded. See Status below
+> for detail.
 >
 > **The FFTW/core package split (Decision 9) and the pocketfft shim (Decision 10) are MERGED to
 > `main`** (2026-09-24, fast-forwarded from `new-license-pocketfft` — both were confirmed green in
@@ -82,11 +78,10 @@ propose an alternative to one of these, stop and re-read this list instead:
    step" rule that used to be here. CI still builds/smoke-tests/uploads-as-artifact on every push as
    before; the new `publish` job in `.github/workflows/ci.yml` only runs for an actual `vX.Y.Z` tag
    push (`if: startsWith(github.ref, 'refs/tags/v')`, gated on the whole matrix AND the Desktop pack
-   job succeeding first), and pushes every nupkg the matrix actually produces (3 active RIDs × 2
-   license families + 2 Desktop meta-packages = 8 — NOT 10; osx-x64 is excluded from the matrix
-   entirely, see Status, so no 4th RID pair ever exists to push) to nuget.org via
-   `dotnet nuget push --skip-duplicate`. Day-to-day commits/PRs never reach this job at all — only
-   pushing a real version tag does.
+   job succeeding first), and pushes every nupkg the matrix produces (4 active RIDs × 2 license
+   families + 2 Desktop meta-packages = 10, since 2026-10-15 — see Status for the osx-x64 history;
+   it was 8 before that, with osx-x64 excluded) to nuget.org via `dotnet nuget push --skip-duplicate`.
+   Day-to-day commits/PRs never reach this job at all — only pushing a real version tag does.
    - **Uses nuget.org's Trusted Publishing (OIDC), not a long-lived API key** — revised
      2026-09-24, same day this was built, once nuget.org's own UI steered the user toward it as
      the now-recommended approach over classic API keys. No `NUGET_API_KEY` secret exists or is
@@ -109,12 +104,13 @@ propose an alternative to one of these, stop and re-read this list instead:
      and catches a broken Desktop restore immediately rather than only at release time.
    - **Fixed a real, pre-existing correctness bug found while wiring this up**:
      `TINS.Native.Desktop`'s `PackageReference` to `TINS.Native.osx-x64` was still pointing at the
-     old placeholder floor — but since osx-x64 is now permanently excluded (see Status below), no
-     `TINS.Native.osx-x64` package will ever actually be published. Left in place, that reference
-     would have made `TINS.Native.Desktop` fail to restore for *every* consumer on *every*
-     platform, not just osx-x64 users, the moment it was ever really published. Dropped the
-     reference entirely (see that csproj's own comment for detail) rather than pointing it at a
-     version that will never exist.
+     old placeholder floor — but since osx-x64 was excluded at the time (see Status below), no
+     `TINS.Native.osx-x64` package was ever actually going to be published. Left in place, that
+     reference would have made `TINS.Native.Desktop` fail to restore for *every* consumer on
+     *every* platform, not just osx-x64 users, the moment it was ever really published. Dropped
+     the reference entirely (see that csproj's own comment for detail) rather than pointing it at
+     a version that would never exist. **Re-added 2026-10-15** once osx-x64 had a real build again
+     — see Status.
    - **The release-cutting nuance above actually happened, exactly as predicted, on the very first
      release.** `v1.0.0` shipped `TINS.Native.Desktop`/`TINS.Native.FFTW.Desktop` still pinned to
      the pre-tag `0.0.0-alpha.1.22` floor — nobody bumped it before tagging. Impact was cosmetic
@@ -148,9 +144,22 @@ propose an alternative to one of these, stop and re-read this list instead:
        `try`/`catch` around the whole inspection step that sets `$failed = $true` on any error.
        Verified both directions before landing: the fixed `1.0.0` floor passes, and re-querying
        nuget.org for the old `0.0.0-alpha.1.22` floor directly confirms it would have failed loudly.
+     - **Extended 2026-10-15, when osx-x64 was re-added**: the guard rail originally only checked
+       nuget.org, which meant a brand-new RID's first-ever version could never pass it within the
+       *same* release that introduces it (that version doesn't exist on nuget.org yet — `publish`
+       runs after `pack-desktop`, later in the same workflow). Added a fallback: before querying
+       nuget.org, check whether a matching `<id>.<version>.nupkg` already sits among this run's own
+       just-downloaded matrix artifacts (`artifacts/nupkg` — the same folder `publish` is about to
+       push from). This is what let `TINS.Native.osx-x64`/`TINS.Native.FFTW.osx-x64` join the
+       Desktop meta-packages in one `v1.1.0` tag instead of needing an awkward two-release dance
+       (build the RID with no Desktop reference, tag; add the Desktop reference, tag again). Tested
+       both branches locally before trusting it (a locally-packed stand-in for "this run's own
+       artifacts," plus the existing published-sibling case), the same way the original script was
+       verified.
    - **Considered, deliberately not done (yet)**: decoupling the RID packages' and Desktop
      meta-packages' version streams (e.g. separate `MinVerTagPrefix` per family) so a Desktop-only
-     fix doesn't force a no-op republish of all 6 RID packages. Would reduce *how often* the floor
+     fix doesn't force a no-op republish of all 8 RID packages (4 RIDs × 2 families, since
+     2026-10-15). Would reduce *how often* the floor
      needs touching, but doesn't address the actual root cause (a human forgetting a manual step),
      which the guard rail above already covers directly. Revisit only if the wasted-republish
      side effect itself becomes a real problem, not just for its own sake.
@@ -240,12 +249,11 @@ propose an alternative to one of these, stop and re-read this list instead:
      package → run `smoke -- fftw` → remove it) specifically to prove the core package alone never
      drags in FFTW.
    - **`TINS.Native.FFTW.Desktop` now exists** (added 2026-09-23, once the split's first CI height —
-     `0.0.0-alpha.1.22` — existed to pin a floor to, per Decision 8's own reasoning). Unlike the core
-     `TINS.Native.Desktop`, it references only win-x64/linux-x64/osx-arm64 — `TINS.Native.FFTW.osx-x64`
-     has never been built, not even as a placeholder, so including it would break restore entirely
-     rather than degrade gracefully. `TINS.Native.Desktop`'s own floor was bumped to `1.22` for
-     win-x64/linux-x64/osx-arm64 at the same time; its osx-x64 entry deliberately stayed at `1.14`
-     (the old placeholder, never rebuilt at the new height — see that `.csproj`'s own comment).
+     `0.0.0-alpha.1.22` — existed to pin a floor to, per Decision 8's own reasoning). At the time, it
+     referenced only win-x64/linux-x64/osx-arm64 — `TINS.Native.FFTW.osx-x64` hadn't been built yet,
+     not even as a placeholder, so including it would have broken restore entirely rather than
+     degrading gracefully. **Superseded 2026-10-15**: osx-x64 now has a real build (see Status), and
+     both Desktop meta-packages reference all four RIDs uniformly at the same floor.
    - **On the `tins-lib` side (separate, later session, not started):** `FFTW<T>` needs to become a
      truly optional native provider (`NativeLibrary.TryLoad`, silently unavailable if
      `TINS.Native.FFTW.<rid>` isn't referenced) rather than a hard dependency, and PocketFFT — managed
@@ -333,18 +341,19 @@ propose an alternative to one of these, stop and re-read this list instead:
   `vcpkg install` from source (not stand-ins), staged, packed, and smoke-tested successfully, with real
   `TINS.Native.<rid>` nupkgs uploaded as workflow artifacts. This is proven end-to-end, not just
   "should work" — see the CI debugging log below for exactly what it took.
-- **osx-x64 is EXCLUDED, not just paused** (user's own call, 2026-09-24, made while assessing
-  nuget.org publish readiness — see `NUGET-PUBLISH-CHECKLIST.md`, local-only, not committed).
-  Originally commented out of the CI matrix purely for quota reasons (this repo's free Actions
-  minutes were exhausted standing up the other three legs), but re-checking GitHub's current runner
-  offerings found something worse than a quota wait: `macos-13` (the runner that leg targets) was
-  fully deprecated by GitHub in December 2025, and its replacement, `macos-15-intel`, is **not
-  available on the GitHub Free plan at all**. This is now a plan-tier lockout, not something that
-  resolves on its own when quota resets. `pack/TINS.Native.osx-x64/` and the RID package itself are
-  still untouched in the codebase (per Decision 2, don't delete without a new explicit reason to),
-  but treat this RID as genuinely unsupported for the foreseeable future, not "coming soon" — most
-  Macs running this today are Apple Silicon (`osx-arm64`) anyway. Revisit only given a paid GitHub
-  plan, a self-hosted runner, real Intel Mac hardware, or real demand for Intel Mac support.
+- **osx-x64 is REAL and working as of 2026-10-15** — supersedes every earlier "EXCLUDED"/"plan-tier
+  lockout" note that used to be here (2026-09-24 through 2026-10-14). That earlier conclusion
+  (`macos-15-intel` needs a paid GitHub plan) turned out to be wrong, or stopped being true — checked
+  live against GitHub's current runner docs (2026-10-15): `macos-15-intel` is listed as a *standard*
+  GitHub-hosted runner, not a "larger runner," so it's available on every plan tier, and since this
+  repo is public, standard runners are free and unlimited here regardless of quota. Re-enabled the
+  CI matrix leg and it built green on the first attempt — `vcpkg install`, the LAPACK-enabled
+  OpenBLAS overlay, and the pocketfft shim all built successfully, and **both smoke tests (core and
+  FFTW) passed**, confirming the Linux-only `NO_AVX*` OpenBLAS/GCC workaround (CI debugging log item
+  12) genuinely doesn't apply here — osx-x64 uses Apple Clang, same toolchain family as osx-arm64,
+  not GCC. `TINS.Native.osx-x64`/`TINS.Native.FFTW.osx-x64` are now wired into
+  `TINS.Native.Desktop`/`TINS.Native.FFTW.Desktop` alongside the other three RIDs (see Decision 9),
+  shipped together via the `v1.1.0` tag.
 - **GitHub Actions free quota is a real, binding constraint on this repo.** Personal GitHub Free plan:
   2,000 included minutes/month, but macOS runners consume quota at **10x** wall-clock time (Linux is
   1x, Windows is 2x) — two full CI iterations with all 4 legs was enough to exhaust it. The account's
@@ -424,13 +433,10 @@ one of these regressing, or covered by a fix that got scoped incorrectly:
 
 ## Known open uncertainties (verify before trusting, don't assume)
 
-- **`osx-x64` filenames/behavior specifically** remain unconfirmed and, per the exclusion decision
-  in Status, aren't expected to get confirmed any time soon — it's the one RID that has never
-  actually run in CI. `osx-arm64` is confirmed and both Apple platforms should behave identically
-  (same Clang toolchain, same vcpkg triplet family), but that remains an inference, not a direct
-  observation, unless osx-x64 support is ever actually pursued (this was previously phrased as
-  "check before re-enabling `macos-13`" — resolved now: `macos-13` is gone, and its replacement
-  isn't available on the Free plan at all, see Status; don't re-derive this, it's settled).
+- ~~`osx-x64` filenames/behavior specifically remain unconfirmed~~ — **resolved 2026-10-15**: now
+  built, packed, and smoke-tested (both core and FFTW) in real CI, same as the other three RIDs.
+  `stage-native.ps1`'s rename-map (`"^osx-"` regex) was already generic across both Apple RIDs, not
+  a hardcoded whitelist, so this worked without needing any staging-script changes.
 - `SGESVD`/LAPACK presence has only been directly verified (via `dumpbin /exports`-equivalent symbol
   inspection) on win-x64. `linux-x64` and `osx-arm64` use the exact same overlay port with the same
   flags and built/packed/smoke-tested successfully, so it's very likely fine, but nobody has run
@@ -492,17 +498,21 @@ not Bash — MSYS mangles a bare `/exports` flag into a path):
   single-target regardless of this decision either way. Single-target carries a real portability risk
   (illegal-instruction fault on a CPU older/different than the build machine's) that hasn't been
   addressed for any platform — don't assume it's fine for a real release without revisiting this.
-- **Confirmed fixed on all three platforms that have actually run** (win-x64, linux-x64, osx-arm64) —
-  each built, packed, and smoke-tested successfully with the LAPACK-enabled overlay; win-x64's symbols
-  were independently re-verified with `dumpbin`, the other two weren't (see the uncertainty above).
-  Linux additionally needed `NO_AVX`/`NO_AVX2`/`NO_AVX512` (see the CI debugging log's item 12) — a
-  real GCC-specific compiler bug in OpenBLAS's generic SIMD layer, unrelated to LAPACK itself, scoped
-  to Linux only so Windows/macOS keep full AVX2/AVX-512 performance. Considered and rejected switching
-  away from OpenBLAS (to BLIS+libFLAME) to route around that Linux bug: no vcpkg port for either exists
-  (checked `/c/vcpkg/ports/` directly — only `lapack`/`lapack-reference`/`clapack`, none of which are
-  BLIS/libFLAME), it would mean two libraries and two build systems instead of one, and the actual bug
-  is narrowly confined to one non-critical OpenBLAS source file, not a fundamental OpenBLAS problem —
-  disproportionate effort for what it'd fix. `osx-x64` is unverified (never run, see Status).
+- **Confirmed fixed on all four platforms that have actually run** (win-x64, linux-x64, osx-arm64,
+  and osx-x64 since 2026-10-15) — each built, packed, and smoke-tested successfully with the
+  LAPACK-enabled overlay; win-x64's symbols were independently re-verified with `dumpbin`, the
+  other three weren't (symbol presence specifically — see the uncertainty above; all four did pass
+  their functional smoke test). Linux additionally needed `NO_AVX`/`NO_AVX2`/`NO_AVX512` (see the CI
+  debugging log's item 12) — a real GCC-specific compiler bug in OpenBLAS's generic SIMD layer,
+  unrelated to LAPACK itself, scoped to Linux only so Windows/macOS keep full AVX2/AVX-512
+  performance. Confirmed this doesn't apply to osx-x64 either, despite also being x86_64 like Linux:
+  the bug is GCC-specific, and macOS (Intel or ARM) uses Apple Clang regardless of architecture.
+  Considered and rejected switching away from OpenBLAS (to BLIS+libFLAME) to route around that Linux
+  bug: no vcpkg port for either exists (checked `/c/vcpkg/ports/` directly — only
+  `lapack`/`lapack-reference`/`clapack`, none of which are BLIS/libFLAME), it would mean two
+  libraries and two build systems instead of one, and the actual bug is narrowly confined to one
+  non-critical OpenBLAS source file, not a fundamental OpenBLAS problem — disproportionate effort
+  for what it'd fix.
 
 ## The `NativeImportResolver` double-`lib`-prefix bug
 
@@ -567,5 +577,5 @@ is already part of the default source set for any subsequent restore in that sco
 | `licenses/` | Vendored upstream license text for FFTW/OpenBLAS/pocketfft, packed into the matching nupkg(s) alongside `PackageLicenseExpression` — a real redistribution-compliance requirement (BSD/GPL both require it), not decoration. See `licenses/README.md` for exact provenance/pinned versions and the extensionless-`PackagePath` NuGet quirk this ran into |
 | `pocketfft-shim/CMakeLists.txt`, `include/tins_pocketfft.h`, `src/tins_pocketfft.cpp` | Implemented (Decision 10) — a bespoke CMake project (not a vcpkg overlay port) exposing header-only pocketfft as a P/Invoke-able C ABI. `TINS_POCKETFFT_API` export macro is load-bearing on Windows (MSVC exports nothing from a DLL without it) |
 | `scripts/build-pocketfft-shim.ps1` | Configures/builds/installs the pocketfft shim and copies its output into the same core staging folder `stage-native.ps1 -Component Core` uses |
-| `.github/workflows/ci.yml` | Matrix build (win-x64/linux-x64/osx-arm64 active, osx-x64 commented out and excluded — see Status): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998). Plus two jobs added 2026-09-24: `pack-desktop` (packs the two Desktop meta-packages against the matrix's own just-built artifacts, every push — also verifies each Desktop nuspec's dependency floors are actually published on nuget.org, added after v1.0.0 shipped a stale one, see Decision 3) and `publish` (tag-gated `vX.Y.Z` only, pushes all 8 nupkgs the active 3-RID matrix produces to nuget.org via Trusted Publishing/OIDC — policy + the `NUGET_USERNAME` secret both already set up, see Decision 3) |
+| `.github/workflows/ci.yml` | Matrix build, all 4 RIDs active (win-x64/linux-x64/osx-arm64/osx-x64 — see Status for osx-x64's 2026-10-15 re-enable): vcpkg install → stage (core + fftw) → build pocketfft shim (core) → pack (core + fftw) → smoke test (core, then fftw, isolated) → upload artifact (core + fftw). Confirmed green end-to-end including the shim step (2026-09-23, runs 35883211678 and 35891221998; osx-x64 confirmed 2026-10-15). Plus two jobs added 2026-09-24: `pack-desktop` (packs the two Desktop meta-packages against the matrix's own just-built artifacts, every push — also verifies each Desktop nuspec's dependency floors are actually resolvable, either on nuget.org or among this run's own artifacts, added after v1.0.0 shipped a stale one, see Decision 3) and `publish` (tag-gated `vX.Y.Z` only, pushes all 10 nupkgs the active 4-RID matrix produces to nuget.org via Trusted Publishing/OIDC — policy + the `NUGET_USERNAME` secret both already set up, see Decision 3) |
 | `smoke/` | Proves a packed nupkg actually loads and resolves native symbols, not just that files exist. `Program.cs` takes a `core`/`fftw`/`all` arg so a core-only run doesn't expect FFTW symbols to be present; the core check now also round-trips a real r2c transform through the pocketfft shim via P/Invoke, not just a symbol-presence probe |

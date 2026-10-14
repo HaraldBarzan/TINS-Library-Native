@@ -33,22 +33,16 @@ pattern projects like FFmpeg use to ship GPL and LGPL builds as separate artifac
 
 | Library | win-x64 | linux-x64 | osx-x64 | osx-arm64 | Package | License |
 |---|---|---|---|---|---|---|
-| OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | excluded (see below) | CI-built (vcpkg) | `TINS.Native.<rid>` | BSD-3-Clause |
-| PocketFFT | CI-built (bespoke CMake) | CI-built (bespoke CMake) | excluded (see below) | CI-built (bespoke CMake) | `TINS.Native.<rid>` | BSD-3-Clause |
-| FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | excluded (see below) | CI-built (vcpkg) | `TINS.Native.FFTW.<rid>` | GPL-2.0-or-later, opt-in |
+| OpenBLAS (`libopenblas`) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | `TINS.Native.<rid>` | BSD-3-Clause |
+| PocketFFT | CI-built (bespoke CMake) | CI-built (bespoke CMake) | CI-built (bespoke CMake) | CI-built (bespoke CMake) | `TINS.Native.<rid>` | BSD-3-Clause |
+| FFTW (`libfftw3-3`, `libfftw3f-3`) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | CI-built (vcpkg) | `TINS.Native.FFTW.<rid>` | GPL-2.0-or-later, opt-in |
 
-FFTW and OpenBLAS are built from source per-platform in CI via [vcpkg](https://vcpkg.io) (see
-`vcpkg.json`, `.github/workflows/ci.yml`) — both from the same manifest/vcpkg install per RID; the
-license split happens at staging/packing time (`scripts/stage-native.ps1 -Component Core|Fftw`), not
-in what vcpkg builds. **`osx-x64` is excluded, not just paused** (decided 2026-09-24, while
-assessing nuget.org publish readiness) — `pack/TINS.Native.osx-x64/` and `pack/TINS.Native.FFTW.osx-x64/`
-are untouched in the codebase, but this RID isn't expected to become real any time soon. It was
-originally just commented out of the CI matrix for quota reasons, but the runner that leg targets
-(`macos-13`) has since been fully deprecated by GitHub, and its replacement (`macos-15-intel`) isn't
-available on the GitHub Free plan at all — a plan-tier lockout, not something that resolves when
-quota resets. Revisit only given a paid GitHub plan, a self-hosted runner, real Intel Mac hardware,
-or real demand for it; most Macs running this today are Apple Silicon (`osx-arm64`) anyway, which
-is already real and working.
+All four RIDs are built from source in CI via [vcpkg](https://vcpkg.io) (see `vcpkg.json`,
+`.github/workflows/ci.yml`) — both FFTW and OpenBLAS come from the same manifest/vcpkg install per
+RID; the license split happens at staging/packing time (`scripts/stage-native.ps1
+-Component Core|Fftw`), not in what vcpkg builds. `osx-x64` was excluded from 2026-09-24 to
+2026-10-15 over a believed GitHub-plan restriction on its runner that turned out to be wrong (or no
+longer true) — re-checked live, re-enabled, and confirmed working.
 
 `TINS.Core` used to also depend on two custom native wrappers with no tracked source anywhere
 (`libeigenexports` for SVD/PCA, `libdpss` for multitaper analysis); both were replaced with pure
@@ -100,16 +94,15 @@ folder you use.
 - `pack/TINS.Native.FFTW.<rid>/` — one minimal native-asset-only `.csproj` per RID (FFTW only,
   GPL-2.0-or-later, opt-in).
 - `pack/TINS.Native.Desktop/` — meta-package depending on all four core RID packages, no native
-  content of its own. `pack/TINS.Native.FFTW.Desktop/` is the equivalent for the FFTW family, minus
-  osx-x64 (no FFTW build exists for it, not even a placeholder — see CLAUDE.md).
+  content of its own. `pack/TINS.Native.FFTW.Desktop/` is the equivalent for the FFTW family.
 - `LICENSE` / `licenses/` — this repo's own BSD-3-Clause license, plus vendored upstream license
   text for FFTW/OpenBLAS/pocketfft (BSD/GPL both require reproducing it in redistributions, not
   just declaring `PackageLicenseExpression`), packed into the matching nupkg(s). See
   `licenses/README.md` for exact provenance.
 - `pocketfft-shim/` — a bespoke CMake project (not a vcpkg overlay port) implementing a thin,
   P/Invoke-able C ABI around header-only PocketFFT. Implemented and confirmed green in real CI on
-  win-x64/linux-x64/osx-arm64 (export symbols, a standalone functional test harness, and a full
-  .NET P/Invoke round trip), and cross-repo-verified against `tins-lib`'s own native provider code.
+  all four RIDs (export symbols, a standalone functional test harness, and a full .NET P/Invoke
+  round trip), and cross-repo-verified against `tins-lib`'s own native provider code.
 - `scripts/stage-native.ps1` — copies vcpkg's build output into a flat `runtimes/<rid>/native/`
   staging folder consumed by the pack step, split by `-Component Core|Fftw` into the two license
   families' separate staging roots.
@@ -124,9 +117,9 @@ folder you use.
 
 ## Status
 
-`win-x64`, `linux-x64`, and `osx-arm64` have all been built, packed, and smoke-tested successfully
-in real CI, with genuine (not placeholder) native binaries, including the pocketfft shim. `osx-x64`
-is excluded, not paused (see Scope above) — not something either repo needs to wait on.
+All four RIDs — `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64` — have been built, packed, and
+smoke-tested successfully in real CI, with genuine (not placeholder) native binaries, including the
+pocketfft shim.
 `TINS-Library`'s `TINS.Core`, on its own `main` branch, still bundles its own win-x64 natives
 directly — that migration (dropping the glob in favor of an explicit `TINS.Native.<rid>` reference)
 exists on a separate `tins-lib` branch, not yet merged there either.

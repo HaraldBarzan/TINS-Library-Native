@@ -6,69 +6,37 @@
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
     <PackageId>TINS.Native.Desktop</PackageId>
-    <Description>Meta-package bundling TINS.Native.win-x64, TINS.Native.linux-x64, and TINS.Native.osx-arm64, so a multi-platform consumer (e.g. a cross-targeted test project) can pull in native OpenBLAS/PocketFFT assets for every desktop RID with a single reference instead of adding each RID package individually. A single-RID deployment should still reference just its own TINS.Native.&lt;rid&gt; package directly -- this carries no native content of its own. osx-x64 is deliberately excluded, see the PackageReference comment below. FFTW is not included here, per the FFTW/core license split (GPL-2.0-or-later vs. BSD-3-Clause) -- see TINS.Native.FFTW.Desktop for the equivalent opt-in bundle.</Description>
+    <Description>Meta-package bundling TINS.Native.win-x64, TINS.Native.linux-x64, TINS.Native.osx-x64, and TINS.Native.osx-arm64, so a multi-platform consumer (e.g. a cross-targeted test project) can pull in native OpenBLAS/PocketFFT assets for every desktop RID with a single reference instead of adding each RID package individually. A single-RID deployment should still reference just its own TINS.Native.&lt;rid&gt; package directly -- this carries no native content of its own. FFTW is not included here, per the FFTW/core license split (GPL-2.0-or-later vs. BSD-3-Clause) -- see TINS.Native.FFTW.Desktop for the equivalent opt-in bundle.</Description>
     <PackageTags>Neuroscience, Native, OpenBLAS, PocketFFT, Desktop</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- $(Version) isn't usable here: MinVer computes it via a build target that runs
-         *after* restore, but restore needs a concrete version right now to resolve these
-         PackageReferences (chicken and egg).
+    <!-- $(Version) isn't usable here: MinVer computes it via a build target that runs *after*
+         restore, but restore needs a concrete version immediately (fails with NU1102
+         otherwise). So these are hand-pinned floors instead; plain (non-floating,
+         non-bracketed) version strings, which NuGet treats as minimum-inclusive bounds
+         (">= X"), not exact pins.
 
-         This has been through two earlier iterations:
-         1. A floating version ("0.0.0-alpha.1.*"): has no publishable meaning in a
-            nuspec, so `dotnet pack` collapsed it to whatever concrete sibling version
-            resolved *at pack time* and baked THAT in as the minimum, ratcheting up on every
-            repack. Once an older sibling version got pruned from a downstream feed, this
-            risked a genuine hard restore failure (floor higher than what that feed had).
-         2. An abstract, height-less floor ("0.0.0-alpha.1"): never ratchets, but a
-            literal "0.0.0-alpha.1" build will never exist, so NU1603 ("dependency version
-            not found, nearest match used") fired on *every single restore*, everywhere,
-            permanently. Benign, but noisy enough in practice (reported from a real
-            downstream consumer, AxoSync) that it's worth avoiding for a floor we can
-            actually pin correctly.
-
-         Settled on pinning to "0.0.0-alpha.1.14" specifically: the one height at which
-         all four sibling packages have actually been built and sit in the local feed
-         together. As a plain (non-floating, non-bracketed) version string this is still a
-         minimum-inclusive bound (">= 0.0.0-alpha.1.14"), not an exact pin, so any later
-         height still satisfies it once repacked; but a NuGet global-package-cache with an
-         older cached copy (e.g. 1.12) no longer silently satisfies it either, forcing
-         restore to reach for the real current version instead (this is what was actually
-         happening: AxoSync's cache had stale 1.12/1.2 copies that satisfied the old
-         "anything >= 0.0.0-alpha.1" floor, not a feed content problem).
-
-         Trade-off, accepted deliberately: this floor needs bumping by hand (edit here, then
-         repack) whenever the sibling packages move to a new height that should become the
-         new baseline: back to needing a manual step, but only when actually intended,
-         not silently on every incidental repack. Update this (and
-         MinVerDefaultPreReleaseIdentifiers in Directory.Build.props) together if that
-         identifier ever changes (e.g. once real release tags start).
-
-         Bumped win-x64/linux-x64/osx-arm64 to "0.0.0-alpha.1.22" (2026-09-23, after the FFTW/core
-         split + pocketfft shim landed and ran green in CI): the new height all three actually
-         built RIDs share.
-
-         TINS.Native.osx-x64 was dropped entirely (2026-09-24, while building the real nuget.org
-         publish workflow; see NUGET-PUBLISH-CHECKLIST.md, local-only): it used to sit here pinned
-         to the old "0.0.0-alpha.1.14" placeholder height, but osx-x64 is now permanently EXCLUDED
-         (see CLAUDE.md's Status section), meaning no TINS.Native.osx-x64 package will ever actually
-         be published. A PackageReference to a package that doesn't exist on the target feed doesn't
-         just degrade for osx-x64 users; it fails restore for this ENTIRE meta-package, for every
-         consumer on every platform. Don't add it back unless osx-x64 gets a real (or at least
-         actually-published) build of its own.
-
-         Bumped to "1.0.0" (2026-09-24, fixing a real bug): the v1.0.0 tag/publish shipped the
-         siblings at clean "1.0.0" but this floor was left at the pre-tag "0.0.0-alpha.1.22",
-         producing NU1603 ("dependency version not found, nearest match used") on every consumer
-         restore; cosmetic since NuGet still resolved up to the real 1.0.0 correctly, but exactly
-         the stale-floor failure mode this pinning design exists to prevent, and permanent noise
-         until fixed. This package's own version moves to 1.0.1 (next tag) to publish the fix; this
-         floor points at 1.0.0, the actual current sibling version, not 1.0.1; the siblings
-         themselves aren't changing, only these two Desktop packages are. -->
-    <PackageReference Include="TINS.Native.win-x64" Version="1.0.0" />
-    <PackageReference Include="TINS.Native.linux-x64" Version="1.0.0" />
-    <PackageReference Include="TINS.Native.osx-arm64" Version="1.0.0" />
+         Condensed history (see CLAUDE.md's Decision 8/9 for the full blow-by-blow of every
+         iteration, including exact dates/commits):
+         - A floating version or an abstract/height-less floor both caused real problems
+           (silently ratcheting minimums, or permanent NU1603 noise on every single restore;
+           reported for real by a downstream consumer, AxoSync). Settled on pinning to a real,
+           concrete, currently-valid version instead.
+         - osx-x64 was dropped entirely on 2026-09-24 when it was excluded from the CI matrix
+           (no package existed for this reference to point at); re-added below on 2026-10-15
+           once it had a real build again.
+         - v1.0.0 (2026-09-24) shipped this floor stale, pointing at a pre-release height that
+           had never actually been published; permanent NU1603 warnings for every consumer
+           until v1.0.1 fixed it. That incident is why the "Verify Desktop dependency floors
+           are actually published" CI step exists now (see ci.yml's pack-desktop job); it
+           fails the build loudly if this floor (or the matching one in
+           TINS.Native.FFTW.Desktop.csproj) is ever left stale again, instead of silently
+           shipping a bad reference. -->
+    <PackageReference Include="TINS.Native.win-x64" Version="1.1.0" />
+    <PackageReference Include="TINS.Native.linux-x64" Version="1.1.0" />
+    <PackageReference Include="TINS.Native.osx-x64" Version="1.1.0" />
+    <PackageReference Include="TINS.Native.osx-arm64" Version="1.1.0" />
   </ItemGroup>
 
 </Project>

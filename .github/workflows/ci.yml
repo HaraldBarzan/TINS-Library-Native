@@ -226,10 +226,20 @@ jobs:
       # (0.0.0-alpha.1.22) that was never published to nuget.org at all (publishing used to be
       # local-artifact-only -- see Decision 3), producing a permanent NU1603 warning on every
       # consumer restore. Extracts every <dependency id, version> pair from both just-packed
-      # nuspecs and confirms each exact version string is actually present on nuget.org's
-      # v3-flatcontainer index for that package id -- not just "some version exists", the EXACT
-      # floor. A floor that's satisfied only by resolving upward past it (like alpha.1.22 was)
+      # nuspecs and confirms each exact version string is actually resolvable: either it's already
+      # published on nuget.org's v3-flatcontainer index, OR a matching nupkg sits among THIS run's
+      # own just-downloaded matrix artifacts (the publish job, which runs after this one, is about
+      # to push it) -- not just "some version exists", the EXACT floor, from one source or the
+      # other. A floor that's satisfied only by resolving upward past it (like alpha.1.22 was)
       # means this check would have failed loudly here instead of shipping silently.
+      #
+      # The local-artifacts fallback (added 2026-10-15, alongside re-enabling osx-x64) matters
+      # specifically for a brand-new RID's first-ever release: TINS.Native.osx-x64 1.1.0 doesn't
+      # exist on nuget.org yet when THIS step runs (publish hasn't happened yet this run), but it's
+      # right there in artifacts/nupkg, about to be pushed -- without this fallback, adding a new
+      # RID to the Desktop meta-packages in the same tag that first builds it would always trip this
+      # guard rail, forcing an awkward two-release dance (build the RID with no Desktop reference,
+      # tag; then add the Desktop reference, tag again) just to satisfy the check.
       - name: Verify Desktop dependency floors are actually published
         shell: pwsh
         run: |
@@ -259,6 +269,13 @@ jobs:
             foreach ($dep in $deps) {
               $id = $dep.id
               $version = $dep.version
+
+              $localMatch = Get-ChildItem -Path "artifacts/nupkg" -Filter "$id.$version.nupkg" -ErrorAction SilentlyContinue
+              if ($localMatch) {
+                Write-Host "OK: $id $version is among this run's own just-built artifacts, about to be published (required by $($nupkg.Name))"
+                continue
+              }
+
               $indexUrl = "https://api.nuget.org/v3-flatcontainer/$($id.ToLowerInvariant())/index.json"
               try {
                 $published = (Invoke-RestMethod -Uri $indexUrl -ErrorAction Stop).versions
@@ -268,7 +285,7 @@ jobs:
                 continue
               }
               if ($published -notcontains $version) {
-                Write-Host "::error::$($nupkg.Name) depends on '$id >= $version', but $id $version has never been published to nuget.org. Bump the PackageReference floor in the matching .csproj to a real, published sibling version before tagging a release (see CLAUDE.md Decision 8/9)."
+                Write-Host "::error::$($nupkg.Name) depends on '$id >= $version', but $id $version has never been published to nuget.org and isn't among this run's own build artifacts either. Bump the PackageReference floor in the matching .csproj to a real, published (or this-run-built) sibling version before tagging a release (see CLAUDE.md Decision 8/9)."
                 $failed = $true
               } else {
                 Write-Host "OK: $id $version is published on nuget.org (required by $($nupkg.Name))"
